@@ -142,14 +142,44 @@ fn monitor_size() -> (i32, i32) {
         .unwrap_or((1920, 1080))
 }
 
-fn build_menu() -> gio::Menu {
-    let file = gio::Menu::new();
-    file.append(Some("_Quit"), Some("app.quit"));
+/// `(label, window action)` sections of the title-bar menus. Every `win.*` action here is wired
+/// to `App::run_action` in `create_window` (except `find` and `command`, which open the search box).
+const MENUS: &[(&str, &[&[(&str, &str)]])] = &[
+    (
+        "_File",
+        &[
+            &[("_New Window", "win.new-window")],
+            &[("Split _Right", "win.split-right"), ("Split _Down", "win.split-down")],
+            &[("Open Pane in New _Window", "win.pop-out"), ("_Close Pane", "win.close-pane")],
+            &[("Open Config _File", "win.open-config"), ("_Reload Config", "win.reload-config")],
+            &[("_Quit", "app.quit")],
+        ],
+    ),
+    (
+        "_Edit",
+        &[
+            &[("_Copy", "win.copy"), ("_Paste", "win.paste")],
+            &[("Copy Working _Directory", "win.copy-path"), ("C_lear Terminal", "win.clear")],
+            &[("_Find in Output", "win.find"), ("Command _Palette", "win.command")],
+        ],
+    ),
+    ("_View", &[&[("Cycle _Colour Scheme", "win.cycle-scheme")]]),
+    ("_Help", &[&[("_About Paua", "win.about")]]),
+];
 
+fn build_menu() -> gio::Menu {
     let menu = gio::Menu::new();
-    menu.append_submenu(Some("_File"), &file);
-    menu.append_submenu(Some("_Edit"), &gio::Menu::new());
-    menu.append_submenu(Some("_View"), &gio::Menu::new());
+    for (title, sections) in MENUS {
+        let submenu = gio::Menu::new();
+        for items in *sections {
+            let section = gio::Menu::new();
+            for (label, action) in *items {
+                section.append(Some(label), Some(action));
+            }
+            submenu.append_section(None, &section);
+        }
+        menu.append_submenu(Some(title), &submenu);
+    }
     menu
 }
 
@@ -385,6 +415,31 @@ impl App {
                     })
                     .build(),
             ]);
+            // The other menu entries: `win.new-window` runs `run_action("new_window")`, and so on.
+            for (action, name) in [
+                ("new-window", "new_window"),
+                ("split-right", "split_right"),
+                ("split-down", "split_down"),
+                ("pop-out", "pop_out"),
+                ("close-pane", "close_pane"),
+                ("copy", "copy"),
+                ("paste", "paste"),
+                ("copy-path", "copy_path"),
+                ("clear", "clear"),
+                ("cycle-scheme", "cycle_scheme"),
+                ("open-config", "open_config"),
+                ("reload-config", "reload_config"),
+                ("about", "about"),
+            ] {
+                let (app, w) = (Rc::downgrade(self), Rc::downgrade(&win));
+                window.add_action_entries([gio::ActionEntry::builder(action)
+                    .activate(move |_, _, _| {
+                        if let (Some(app), Some(win)) = (app.upgrade(), w.upgrade()) {
+                            app.run_action(&win, name);
+                        }
+                    })
+                    .build()]);
+            }
         }
 
         // Buttons act on the window they are in.
@@ -910,6 +965,18 @@ impl App {
         win.status.set_context(ctx);
     }
 
+    fn show_about(win: &Rc<Win>) {
+        let about = adw::AboutDialog::builder()
+            .application_name("Paua")
+            .application_icon(crate::APP_ID)
+            .version(env!("CARGO_PKG_VERSION"))
+            .comments("A colourful terminal")
+            .website("https://github.com/gregbacchus/paua-termimal")
+            .developer_name("Greg Bacchus")
+            .build();
+        about.present(Some(&win.window));
+    }
+
     /// A status bar button or menu entry was used.
     fn run_action(self: &Rc<Self>, win: &Rc<Win>, action: &str) {
         let pane = self.win_active(win);
@@ -923,9 +990,12 @@ impl App {
                 self.new_window_at(cwd);
             }
             "cycle_scheme" => self.cycle_scheme(),
+            "about" => Self::show_about(win),
             "reload_config" => self.reload_user(),
             "open_config" => self.open_config_file(),
-            "clear" | "close_pane" | "pop_out" | "copy_path" if pane.is_none() => {}
+            "clear" | "close_pane" | "pop_out" | "copy_path" | "copy" | "paste" if pane.is_none() => {}
+            "copy" => pane.unwrap().term.copy(),
+            "paste" => pane.unwrap().term.paste_clipboard(),
             "clear" => pane.unwrap().term.clear(),
             "close_pane" => self.close_pane(&pane.unwrap()),
             "pop_out" => self.pop_out(&pane.unwrap()),

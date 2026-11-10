@@ -259,6 +259,13 @@ Pull / Push buttons; the sync button next to it pulls (fast-forward only) then p
 Failures (a dirty tree blocking a switch, a diverged branch) show git's message as a toast. Icons,
 format, counts, timeouts and the sync button are under `status_bar.git`.
 
+## Menus and shortcuts
+
+The title-bar menus: **File** (New Window Ctrl+Shift+N, split right / down, open the pane in a new
+window, Close Pane Ctrl+Shift+W, open / reload the config, Quit Ctrl+Q), **Edit** (Copy Ctrl+Shift+C,
+Paste Ctrl+Shift+V, copy the working directory, Clear Terminal, Find Ctrl+Shift+F, Command Palette
+Ctrl+Shift+P), **View** (cycle the colour scheme) and **Help** (About).
+
 ## Bell flash
 
 When a program rings the terminal bell (BEL, e.g. `echo -e '\a'`), the pane header flashes and fades

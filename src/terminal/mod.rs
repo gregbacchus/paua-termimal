@@ -1043,6 +1043,16 @@ impl TermView {
         });
     }
 
+    /// Copy the selection to the clipboard (the Edit menu).
+    pub fn copy(&self) {
+        self.copy_selection(false);
+    }
+
+    /// Paste the clipboard (the Edit menu).
+    pub fn paste_clipboard(&self) {
+        self.paste();
+    }
+
     /// Copy the selection to the clipboard (Ctrl+Shift+C) or to PRIMARY (on select, for
     /// middle-click paste).
     fn copy_selection(&self, primary: bool) {
