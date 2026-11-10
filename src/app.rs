@@ -866,17 +866,12 @@ impl App {
         // `cd` to recent directories, and `ssh` to configured hosts, in the focused pane.
         if let Some(pane) = &active {
             if cfg.palette.directories {
-                let home = glib::home_dir().display().to_string();
                 let here = pane.cwd.borrow().clone();
                 for dir in self.recent_dirs.borrow().iter().filter(|d| **d != here) {
-                    let shown = crate::header::replace_path(
-                        &dir.display().to_string(),
-                        &cfg.panes.header.path_replacements,
-                        Some(&home),
-                    );
-                    let (term, text) =
-                        (pane.term.clone(), format!("cd {}\r", palette::shell_quote(&dir.display().to_string())));
-                    items.push(PaletteItem::new("Directory", format!("cd {shown}"), "", move || term.type_text(&text)));
+                    // The plain path: the palette's font may not have the header's icons.
+                    let full = dir.display().to_string();
+                    let (term, text) = (pane.term.clone(), format!("cd {}\r", palette::shell_quote(&full)));
+                    items.push(PaletteItem::new("Directory", format!("cd {full}"), "", move || term.type_text(&text)));
                 }
             }
             if cfg.palette.ssh_hosts {

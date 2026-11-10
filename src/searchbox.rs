@@ -97,7 +97,6 @@ impl SearchBox {
             .css_classes(["command-entry"])
             .xalign(0.5) // the placeholder is centred; typed text goes left (see below)
             .build();
-        entry.connect_changed(|e| EditableExt::set_alignment(e, if e.text().is_empty() { 0.5 } else { 0.0 }));
         let count = gtk::Label::builder()
             .css_classes(["match-count"])
             .valign(gtk::Align::Center)
@@ -417,6 +416,9 @@ impl Inner {
             Mode::Find => ("/", "Find in output (type > for commands)", "Find in output"),
             Mode::Command => (">", "Command palette (type / to find in output)", "Command, pane or directory"),
         };
+        // The idle placeholder is centred; once the box is open (find / command) the caret and the
+        // text start at the left, as you'd expect when typing.
+        EditableExt::set_alignment(&self.entry, if mode == Mode::Idle { 0.5 } else { 0.0 });
         self.chip.set_label(chip);
         self.chip.set_tooltip_text(Some(tip));
         self.chip.set_visible(mode != Mode::Idle);
