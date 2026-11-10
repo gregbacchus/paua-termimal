@@ -327,6 +327,33 @@ and explicit OSC 8 hyperlinks (such as the file names in nushell's `ls`) both wo
 mouse (vim, htop) hold **Ctrl+Shift** instead. Options (modifier key, schemes, underline colour)
 are under `terminal.urls` in the [terminal docs](docs/config/terminal.md#terminalurls).
 
+## Shell integration (directory tracking)
+
+The pane header, the window colour from `.paua.yaml` / `.vscode/settings.json`, `{path}` in the status
+bar and the git widget all follow the shell's **working directory**. Paua learns it in two ways:
+
+- **From the shell**, with the `OSC 7` escape sequence that nushell, fish and some zsh / bash setups
+  send on every prompt. This is the only way to learn the directory on another machine (ssh).
+- **From the system**, if the shell never sends `OSC 7` (plain bash and zsh, for example on Arch or
+  Omarchy): Paua reads the shell's current directory from `/proc` a few times a second. Nothing to
+  configure; it switches to `OSC 7` automatically as soon as the shell sends one.
+
+To also get the directory (and host) right over ssh, make the shell report it. For bash, in `~/.bashrc`:
+
+```bash
+__paua_osc7() { printf '\e]7;file://%s%s\a' "$HOSTNAME" "$PWD"; }
+PROMPT_COMMAND="__paua_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+```
+
+For zsh, in `~/.zshrc`: `precmd() { print -Pn "\e]7;file://%m%d\a" }`. fish and nushell do it already.
+
+## Other desktops
+
+Paua is GTK 4 + libadwaita, so it runs on any Linux desktop or window manager (it has been used on
+Hyprland / Omarchy), not just GNOME, using its own title bar. It needs GTK >= 4.14 and libadwaita >=
+1.5. The light / dark scheme comes from the desktop's setting (`org.freedesktop.appearance` via the
+settings portal); if yours doesn't provide one, View -> Cycle Colour Scheme switches it by hand.
+
 ## Menus and shortcuts
 
 The title-bar menus: **File** (New Window Ctrl+Shift+N, split right / down, open the pane in a new

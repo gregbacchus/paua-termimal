@@ -6,6 +6,7 @@ mod fonts;
 mod frame;
 mod git;
 mod header;
+mod icons;
 mod install;
 mod palette;
 mod searchbox;
@@ -91,12 +92,18 @@ fn main() -> glib::ExitCode {
     app.run()
 }
 
-/// Make the app icon findable by name. For development we point GTK at ./assets/icons; after
-/// `paua install` (or in a package) it is found in the user's / system icon directories.
+/// Make Paua's own icons (split, pop out, the app icon) findable by name. They are built into the
+/// binary and written to the cache directory, which is added to the icon search path; a development
+/// build also looks in ./assets/icons.
 fn load_icons() {
     let display = gdk::Display::default().expect("no display");
-    gtk::IconTheme::for_display(&display)
-        .add_search_path(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icons"));
+    let theme = gtk::IconTheme::for_display(&display);
+    theme.add_search_path(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/icons"));
+    let dir = icons::cache_dir();
+    match icons::write_icons(&dir) {
+        Ok(_) => theme.add_search_path(&dir),
+        Err(e) => eprintln!("paua: couldn't write its icons to {}: {e}", dir.display()),
+    }
     gtk::Window::set_default_icon_name(APP_ID);
 }
 

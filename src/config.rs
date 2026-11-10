@@ -791,6 +791,9 @@ pub struct TerminalConfig {
     /// Applies to terminals created after the change.
     pub scrollback: usize,
     pub shell: Option<String>,
+    /// Extra environment variables for new shells, e.g. `VTE_VERSION: "7600"`. They override
+    /// Paua's own (`TERM`, `COLORTERM`, `TERM_PROGRAM`).
+    pub env: std::collections::BTreeMap<String, String>,
     /// `auto` / `always` / `never`, or a map of options (see `ScrollbarConfig`). It only exists
     /// while there is scrollback.
     #[serde(deserialize_with = "scrollbar_or_mode")]
@@ -1088,6 +1091,7 @@ impl Default for TerminalConfig {
         Self {
             scrollback: 10_000,
             shell: None,
+            env: Default::default(),
             scrollbar: ScrollbarConfig::default(),
             scroll_to_bottom_button: ScrollButtonConfig::default(),
             urls: UrlsConfig::default(),

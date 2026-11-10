@@ -22,6 +22,7 @@ pub fn spawn(
     rows: u16,
     shell: Option<&str>,
     cwd: Option<PathBuf>,
+    env: &[(String, String)],
 ) -> anyhow_like::Result<Pty> {
     let pair = native_pty_system().openpty(PtySize {
         rows,
@@ -39,6 +40,9 @@ pub fn spawn(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "paua");
+    for (k, v) in env {
+        cmd.env(k, v); // the user's `terminal.env` wins over the defaults above
+    }
     if let Some(cwd) = cwd.or_else(|| std::env::current_dir().ok()) {
         cmd.cwd(cwd);
     }
@@ -76,4 +80,23 @@ pub fn spawn(
 /// Tiny local error alias so we don't pull in `anyhow` for the spike.
 pub mod anyhow_like {
     pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `terminal.env` reaches the shell and wins over Paua's own variables.
+    #[test]
+    fn extra_environment_reaches_the_child_and_overrides_defaults() {
+        let env = vec![("VTE_VERSION".to_owned(), "7600".to_owned()), ("TERM_PROGRAM".to_owned(), "custom".to_owned())];
+        let pty = spawn(80, 24, Some("/usr/bin/env"), None, &env).expect("spawn env");
+        let mut out = String::new();
+        while let Ok(chunk) = pty.output.recv_blocking() {
+            out.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        assert!(out.contains("VTE_VERSION=7600"), "{out}");
+        assert!(out.contains("TERM_PROGRAM=custom") && !out.contains("TERM_PROGRAM=paua"), "{out}");
+        assert!(out.contains("COLORTERM=truecolor"));
+    }
 }

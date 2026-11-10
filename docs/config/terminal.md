@@ -4,6 +4,7 @@
 |---|---|---|---|
 | `terminal.scrollback` | integer | `10000` | Lines of scrollback per terminal (`0` = none). The memory is budgeted for terminals up to about 320 columns wide, so narrower terminals keep somewhat more lines than this and very wide ones somewhat fewer. **New terminals only** (panes created after the change). |
 | `terminal.shell` | string (path) | unset (`$SHELL`) | The program to run in a new pane, e.g. `/usr/local/bin/nu`. **New terminals only.** |
+| `terminal.env` | map of name to string | none | Extra environment variables for the shell, on top of Paua's own (`TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=paua`, which they can override). **New terminals only.** See the note on `VTE_VERSION` below. |
 
 Colours: the terminal's colour theme (`terminal.theme`) and its adjustments (`terminal.colors`) are on
 the [themes page](themes.md).
@@ -12,7 +13,19 @@ the [themes page](themes.md).
 terminal:
   scrollback: 10000
   # shell: /usr/bin/nu
+  # env: { VTE_VERSION: "7600" }   # see below
 ```
+
+### `VTE_VERSION` and directory tracking
+
+Paua follows the shell's working directory by itself (from `OSC 7` if the shell sends it, otherwise
+by reading `/proc`), so you normally need nothing. If you want bash or zsh to send `OSC 7` (for the
+directory on a remote host over ssh), distributions ship a script for VTE-based terminals
+(`/etc/profile.d/vte.sh`) that does it, but only when `VTE_VERSION` is 3405 or higher and `TERM` is
+`xterm*`. Setting `env: { VTE_VERSION: "7600" }` makes shells that load that script do so. It tells
+every program in the pane that it runs in a VTE terminal, which a few use to switch on VTE-specific
+behaviour, and the script is only loaded by shells that source `/etc/profile.d` (login shells on
+many systems), so a one-line `PROMPT_COMMAND` snippet (see the README) is usually the more reliable choice.
 
 ## `terminal.scrollbar`
 

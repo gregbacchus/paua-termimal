@@ -516,6 +516,7 @@ impl App {
             scrollback: cfg.terminal.scrollback,
             shell: cfg.terminal.shell.clone(),
             cwd: None,
+            env: cfg.terminal.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         }
     }
 

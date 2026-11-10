@@ -64,6 +64,7 @@ builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the
 | `src/cmdtimer.rs` | Command-running timer state machine |
 | `src/searchbox.rs`, `src/palette.rs` | Title-bar find box / command palette and fuzzy matching |
 | `src/setup.rs` | `paua setup`: first-run wizard (finds Nerd Fonts, asks, writes a *minimal* config, offers `install`). Keep the config it writes minimal and valid |
+| `src/icons.rs` | Icons built into the binary (split / pop-out symbolic icons, app icon), written to `~/.cache/paua/icons` at start-up so an installed binary finds them. New custom icons go in `assets/icons` **and** in `ACTION_ICONS` here |
 | `src/install.rs` | `paua install` (desktop entry, icons built into the binary; offers `setup` when there is no config) |
 | `src/frame.rs`, `src/style.css` | Animated frame colour; the stylesheet |
 | `assets/icons/` | App icon (PNGs 16 to 512) and symbolic action icons |

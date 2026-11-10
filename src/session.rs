@@ -281,6 +281,13 @@ pub fn process_name(pid: i32) -> Option<String> {
     read_args(pid).and_then(|a| a.into_iter().next())
 }
 
+/// The working directory of a process (Linux `/proc/<pid>/cwd`), if it can be read and still exists.
+pub fn cwd_of(pid: i32) -> Option<std::path::PathBuf> {
+    let p = fs::read_link(format!("/proc/{pid}/cwd")).ok()?;
+    // A directory that was removed reads as "/path (deleted)".
+    (!p.to_string_lossy().ends_with(" (deleted)")).then_some(p)
+}
+
 fn parent_of(pid: i32) -> Option<i32> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     // "pid (comm) S ppid ..." where comm may itself contain spaces and parentheses.
@@ -382,6 +389,13 @@ pub fn detect(shell_pid: i32, fg_leader: Option<i32>) -> SessionInfo {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_process_working_directory_is_read_from_proc() {
+        let here = std::env::current_dir().unwrap().canonicalize().unwrap();
+        assert_eq!(cwd_of(std::process::id() as i32).and_then(|p| p.canonicalize().ok()), Some(here));
+        assert_eq!(cwd_of(i32::MAX), None);
+    }
+
     use super::*;
 
     fn args(s: &str) -> Vec<String> {

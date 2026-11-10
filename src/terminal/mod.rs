@@ -78,6 +78,8 @@ pub struct TermConfig {
     pub scrollback: usize,
     pub shell: Option<String>,
     pub cwd: Option<PathBuf>,
+    /// Extra environment variables for the shell (`terminal.env`).
+    pub env: Vec<(String, String)>,
 }
 
 impl Default for TermConfig {
@@ -89,6 +91,7 @@ impl Default for TermConfig {
             scrollback: 10_000,
             shell: None,
             cwd: None,
+            env: Vec::new(),
         }
     }
 }
@@ -182,6 +185,10 @@ pub struct State {
     session_detect: bool,
     session_poll_ms: u32,
     session_last: crate::session::SessionInfo,
+    /// The shell has reported its directory with OSC 7, so we trust that and don't poll /proc.
+    osc7_seen: bool,
+    /// The last directory read from /proc (for shells that don't send OSC 7).
+    polled_cwd: Option<std::path::PathBuf>,
     session_polled_us: i64,
 
     // Scrollbar + scroll-to-bottom button. `sb` is refreshed on every draw. The alphas ease
@@ -716,6 +723,28 @@ impl TermView {
     }
 
     /// Look at the process running on the pty; report changes.
+    /// Follow the shell's working directory for shells that don't report it with OSC 7 (bash and
+    /// zsh don't by default, outside VTE-based terminals): read it from /proc. Once the shell has
+    /// sent an OSC 7 we trust that instead (it also knows about other hosts).
+    fn poll_cwd(&self) {
+        let uri = {
+            let mut guard = self.imp().state.borrow_mut();
+            let Some(st) = guard.as_mut() else { return };
+            if st.osc7_seen {
+                return;
+            }
+            let Some(dir) = st.shell_pid.and_then(crate::session::cwd_of) else { return };
+            if st.polled_cwd.as_ref() == Some(&dir) {
+                return;
+            }
+            st.polled_cwd = Some(dir.clone());
+            gio::File::for_path(&dir).uri().to_string()
+        };
+        if let Some(cb) = self.imp().on_pwd.borrow().as_ref() {
+            cb(&uri);
+        }
+    }
+
     fn poll_session(&self) {
         let (pid, leader) = {
             let mut guard = self.imp().state.borrow_mut();
@@ -821,7 +850,7 @@ impl TermView {
             max_scrollback: scrollback_bytes(cfg.scrollback),
         })?;
 
-        let pty = pty::spawn(cols, rows, cfg.shell.as_deref(), cfg.cwd.clone())?;
+        let pty = pty::spawn(cols, rows, cfg.shell.as_deref(), cfg.cwd.clone(), &cfg.env)?;
 
         // Replies the emulator generates (device attributes, cursor reports...) go to the shell.
         let reply_writer = pty.writer.clone();
@@ -904,6 +933,8 @@ impl TermView {
             session_detect: true,
             session_poll_ms: 1000,
             session_last: crate::session::SessionInfo::default(),
+            osc7_seen: false,
+            polled_cwd: None,
             session_polled_us: 0,
             sb_style: ScrollbarStyle::default(),
             btn_style: ButtonStyle::default(),
@@ -927,6 +958,7 @@ impl TermView {
                 Some(obj) => {
                     obj.poll_session();
                     obj.poll_command();
+                    obj.poll_cwd();
                     glib::ControlFlow::Continue
                 }
                 None => glib::ControlFlow::Break,
@@ -1028,6 +1060,7 @@ impl TermView {
                 st.frac = 0.0;
             }
             if st.pwd_flag.replace(false) {
+                st.osc7_seen = true;
                 pwd = st.term.pwd().ok().map(str::to_owned);
             }
             bell = st.bell_flag.replace(false);

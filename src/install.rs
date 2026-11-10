@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 use crate::APP_ID;
 
 /// The icon at each size, built into the binary.
-const ICONS: [(u32, &[u8]); 7] = [
+pub(crate) const ICONS: [(u32, &[u8]); 7] = [
     (16, include_bytes!("../assets/icons/hicolor/16x16/apps/io.github.gregbacchus.Paua.png")),
     (32, include_bytes!("../assets/icons/hicolor/32x32/apps/io.github.gregbacchus.Paua.png")),
     (48, include_bytes!("../assets/icons/hicolor/48x48/apps/io.github.gregbacchus.Paua.png")),
@@ -58,7 +58,7 @@ fn desktop_path(data: &Path) -> PathBuf {
     data.join("applications").join(format!("{APP_ID}.desktop"))
 }
 
-fn icon_path(data: &Path, size: u32) -> PathBuf {
+pub(crate) fn icon_path(data: &Path, size: u32) -> PathBuf {
     data.join("icons/hicolor").join(format!("{size}x{size}/apps/{APP_ID}.png"))
 }
 
