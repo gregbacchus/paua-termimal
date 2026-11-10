@@ -59,7 +59,7 @@ What a widget is depends on which field you give it, checked in this order:
 | `status_bar.widgets[].builtin` | `clock` \| `git` \| `dirs` | unset | Use a built-in widget. An unknown name is reported and shown as plain text. |
 | `status_bar.widgets[].text` | [template](#templates) | per kind: `{output}` (exec), `{dir}` (dirs), the `id` (button, menu), empty (text) | The text. |
 | `status_bar.widgets[].exec` | string | unset | Shell command (`sh -c`) run in the pane's directory; its **first non-empty output line** (colours removed, 200 characters at most) is `{output}`. A non-zero exit, a timeout or empty output counts as "no output". |
-| `status_bar.widgets[].icon` | string | `""` | Put before the text, e.g. a Nerd Font glyph (`""`). A widget with neither icon nor text is hidden. |
+| `status_bar.widgets[].icon` | string | `""` | Put before the text, e.g. a Nerd Font glyph (`"\ue7a8"`). A widget with neither icon nor text is hidden. |
 | `status_bar.widgets[].tooltip` | [template](#templates) | unset | Tooltip. |
 | `status_bar.widgets[].format` | string | `%H:%M` (clock) | Clock only: a `strftime` format, e.g. `%H:%M:%S`, `%a %d %b`. |
 | `status_bar.widgets[].action` | string | unset | Makes the widget a button. See [actions](#actions). |
@@ -147,25 +147,25 @@ status_bar:
     - id: node                                         # only in Node projects
       side: left
       priority: 51
-      icon: " "                                  # nf-dev-nodejs_small
+      icon: "\ue718 "                                  # nf-dev-nodejs_small
       exec: "node --version"
       when: { files: [package.json], not_files: [bun.lockb] }
       cache: 1m
     - id: rust
       side: left
       priority: 50
-      icon: " "                                  # nf-dev-rust
+      icon: "\ue7a8 "                                  # nf-dev-rust
       exec: "rustc --version | cut -d' ' -f2"
       when: { files: [Cargo.toml] }
     - { id: exit, side: right, priority: 60, text: "{?exit:exit {exit}}", color: "#ff6b6b" }
-    - { id: clear, side: right, priority: 25, icon: " ", tooltip: "Clear terminal", action: clear }
+    - { id: clear, side: right, priority: 25, icon: "\uf12d ", tooltip: "Clear terminal", action: clear }
     - id: layout
       side: right
       priority: 24
       text: "Layout"
       menu: [{ label: Split right, action: split_right }, { label: Split down, action: split_down }]
-    - { id: dirs,  builtin: dirs,  side: right, priority: 30, icon: " " }   # nf-fa-folder_open
-    - { id: clock, builtin: clock, side: right, priority: 10, icon: " ", format: "%H:%M:%S" }
+    - { id: dirs,  builtin: dirs,  side: right, priority: 30, icon: "\uf07c " }   # nf-fa-folder_open
+    - { id: clock, builtin: clock, side: right, priority: 10, icon: "\uf017 ", format: "%H:%M:%S" }
 ```
 
 Good values: priorities in steps of 10 (git 80, errors 60, language versions 50, menus 30, clock 10)
@@ -193,14 +193,14 @@ button.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `status_bar.git.icon` | string | `⎇` | Before the branch name. With a Nerd Font: `""`, `""` or `""`. |
+| `status_bar.git.icon` | string | `⎇` | Before the branch name. With a Nerd Font: `"\ue0a0"`, `"\uf418"` or `"\ue725"`. |
 | `status_bar.git.format` | [template](#templates) | `{branch}{?dirty:*} {status}` | The text. Names: `{branch}` (a short hash when detached), `{upstream}`, `{ahead}`, `{behind}`, `{sync}` (e.g. `↓2 ↑1`), `{diverged}` (its icon when ahead *and* behind), `{staged}`, `{modified}`, `{deleted}`, `{renamed}`, `{untracked}`, `{conflicted}`, `{stashed}` (counts; empty when 0), `{status}` (all the state icons with counts, below) and `{dirty}` (`*` when there are changes). |
 | `status_bar.git.counts` | bool | `true` | Counts next to the icons in `{status}` and the sync button (`✚2` vs `✚`). |
 | `status_bar.git.interval` | [duration](value-types.md#duration) | `5s` | Refresh this often while the window is focused. |
 | `status_bar.git.timeout` | [duration](value-types.md#duration) | `3s` | Kill `git status` after this long (the widget then hides). |
 | `status_bar.git.network_timeout` | [duration](value-types.md#duration) | `60s` | Give up on fetch / pull / push after this long. |
 | `status_bar.git.sync_button` | bool | `true` | Show the sync button. |
-| `status_bar.git.sync_icon` | string | `view-refresh-symbolic` | The sync button's icon: a theme icon name (`view-refresh-symbolic`, `emblem-synchronizing-symbolic`...) or text such as a glyph (`""`). Empty = none. |
+| `status_bar.git.sync_icon` | string | `view-refresh-symbolic` | The sync button's icon: a theme icon name (`view-refresh-symbolic`, `emblem-synchronizing-symbolic`...) or text such as a glyph (`"\uf021"`). Empty = none. |
 
 ### `status_bar.git.icons`
 
@@ -249,15 +249,15 @@ status_bar:
 # With Nerd Font icons (needs status_bar.font.family set to a Nerd Font):
 status_bar:
   git:
-    icon: " "                 # nf-pl-branch
+    icon: "\ue0a0 "                 # nf-pl-branch
     format: "{branch}{?dirty:*} {status}"
-    sync_icon: ""             # nf-fa-refresh
+    sync_icon: "\uf021"             # nf-fa-refresh
     icons:
-      staged: " "             # nf-fa-plus
-      modified: " "           # nf-fa-pencil
-      deleted: " "            # nf-fa-trash
-      untracked: " "          # nf-fa-question
-      stashed: " "           # nf-fa-archive
+      staged: "\uf067 "             # nf-fa-plus
+      modified: "\uf040 "           # nf-fa-pencil
+      deleted: "\uf1f8 "            # nf-fa-trash
+      untracked: "\uf128 "          # nf-fa-question
+      stashed: "\uf187 "           # nf-fa-archive
       conflicted: "🚨"
 ```
 

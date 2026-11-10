@@ -100,13 +100,13 @@ A list; **the first match wins**. Matching is by whole path component (`$HOME` d
 panes:
   header:
     path_replacements:
-      - { from: $HOME,             to: "" }   # nf-fa-home
-      - { from: "$HOME/Downloads", to: "" }   # nf-fa-download
-      - { from: "$HOME/code",      to: "" }   # nf-fa-file_code_o
+      - { from: $HOME,             to: "\uf015" }   # nf-fa-home
+      - { from: "$HOME/Downloads", to: "\uf019" }   # nf-fa-download
+      - { from: "$HOME/code",      to: "\uf1c9" }   # nf-fa-file_code_o
 ```
 
 List the more specific prefixes **first** (the first match wins). Use a Nerd Font icon as the
-replacement for a compact header: `""` for home. Quote strings containing `$` and escapes
+replacement for a compact header: `"\uf015"` for home. Quote strings containing `$` and escapes
 with double quotes.
 
 ### `panes.header.command_timer`
@@ -160,7 +160,7 @@ panes:
       # failed_color: "#ff9a9a"
 ```
 
-Nerd Font: `icon: " "` (clock) or a Material Design timer glyph such as `"\U000F13AB"`, with
+Nerd Font: `icon: "\uf017 "` (clock) or a Material Design timer glyph such as `"\U000F13AB"`, with
 `icon_gap: 6`–`10`. See [Nerd Fonts](nerd-fonts.md).
 
 ### `panes.header.bell`

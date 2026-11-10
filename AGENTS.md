@@ -83,7 +83,7 @@ builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the
 - **Config is live-reloaded** (`App::apply_config`): when adding an option, make it apply on reload
   unless it is inherently startup-only, and document which.
 - **Text selection / Nerd Font icons:** YAML `\u` escapes are one UTF-16 unit; glyphs above U+FFFF
-  need `\U000F0109`. `normalize_surrogate_escapes` also accepts the `󰄉` pair form.
+  need `\U000F0109`. `normalize_surrogate_escapes` also accepts the `\U000F0109` pair form.
 - **Rendering:** runs containing `()[]{}/\` are drawn through a `GskCairoNode`, because the GPU glyph
   cache clips tall glyphs. Use `gsk::CairoNode::new(bounds)` + `draw_context()` (not
   `Snapshot::append_cairo`), or positions break under HiDPI scaling.

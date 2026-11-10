@@ -1500,7 +1500,7 @@ impl Default for GitIcons {
 #[cfg_attr(test, serde(deny_unknown_fields))] // tests catch typos in the examples
 #[serde(default)]
 pub struct GitConfig {
-    /// Before the branch name (a Nerd Font glyph such as `` looks nice).
+    /// Before the branch name (a Nerd Font glyph such as `\ue0a0` looks nice).
     pub icon: String,
     /// Placeholders: `{branch}` `{upstream}` `{ahead}` `{behind}` `{staged}` `{modified}` `{deleted}`
     /// `{renamed}` `{untracked}` `{conflicted}` `{stashed}` `{status}` (all the icons with

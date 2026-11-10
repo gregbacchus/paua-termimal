@@ -45,13 +45,13 @@ current cheat sheet don't match old fonts.
 | `status_bar.font.size` | `9`–`10` | Unset gives 0.9 × the UI font. |
 | `status_bar.font.weight` | `light`–`normal` | Needs that weight installed; static fonts snap to the nearest one. |
 | `panes.header.command_timer.icon_gap` | `6`–`10` (default 5) | Wide glyphs overflow their advance and overlap the time; raise this until they clear. |
-| icons with a trailing space | `" "` | A space after an icon is another way to get room (the status bar's `git.icons.*` and `widgets[].icon` use it as written). |
-| `status_bar.git.icon` | `""` or `""` | A branch glyph before the branch name. Combine glyphs freely: `"\U000F02A2 "`. |
+| icons with a trailing space | `"\uf07c "` | A space after an icon is another way to get room (the status bar's `git.icons.*` and `widgets[].icon` use it as written). |
+| `status_bar.git.icon` | `"\ue0a0"` or `"\uf418"` | A branch glyph before the branch name. Combine glyphs freely: `"\U000F02A2 \uf418"`. |
 
 ## Writing the glyphs
 
 Write icons as escapes in **double-quoted** strings (see [value types](value-types.md#yaml-escapes-and-icons)):
-`""` up to U+FFFF, `"\U000F0109"` above it. Pasting the glyph itself also works, but escapes
+`"\uf015"` up to U+FFFF, `"\U000F0109"` above it. Pasting the glyph itself also works, but escapes
 survive editors and fonts that can't display them.
 
 Find codepoints in the [cheat sheet](https://www.nerdfonts.com/cheat-sheet): the search box takes
@@ -61,28 +61,28 @@ Codepoints that are handy here (Nerd Fonts v3):
 
 | Glyph | Name | Write as | Good for |
 |---|---|---|---|
-| nf-fa-home | home | `""` | `panes.header.path_replacements` for `$HOME` |
-| nf-fa-folder_open | open folder | `""` | `dirs` widget, header |
-| nf-fa-download | download | `""` | replacing `~/Downloads` |
-| nf-fa-file_code_o | code file | `""` | replacing `~/code` |
-| nf-fa-clock_o | clock | `""` | `clock` widget, command timer |
-| nf-fa-link | link | `""` | `session.ssh.icon` |
-| nf-fa-lock | lock | `""` | `session.root.icon`, `session.sudo.icon` |
-| nf-fa-server | server | `""` | `session.remote.icon` |
-| nf-fa-terminal | terminal | `""` | `session.multiplexer.icon` |
-| nf-dev-git_branch | branch | `""` | `status_bar.git.icon` |
-| nf-pl-branch | branch (powerline) | `""` | `status_bar.git.icon` |
-| nf-oct-git_branch | branch | `""` | `status_bar.git.icon` |
-| nf-fa-refresh | refresh | `""` | `status_bar.git.sync_icon` |
-| nf-fa-pencil | pencil | `""` | `git.icons.modified` |
-| nf-fa-trash | trash | `""` | `git.icons.deleted` |
-| nf-fa-question | question | `""` | `git.icons.untracked` |
-| nf-fa-archive | archive | `""` | `git.icons.stashed` |
-| nf-fa-eraser | eraser | `""` | a "clear terminal" button |
-| nf-dev-nodejs_small | Node.js | `""` | a `node` widget |
-| nf-dev-rust | Rust | `""` | a `rust` widget |
-| nf-dev-docker | Docker | `""` | a Docker widget |
-| nf-seti-typescript | TypeScript | `""` | a TypeScript widget |
+| nf-fa-home | home | `"\uf015"` | `panes.header.path_replacements` for `$HOME` |
+| nf-fa-folder_open | open folder | `"\uf07c"` | `dirs` widget, header |
+| nf-fa-download | download | `"\uf019"` | replacing `~/Downloads` |
+| nf-fa-file_code_o | code file | `"\uf1c9"` | replacing `~/code` |
+| nf-fa-clock_o | clock | `"\uf017"` | `clock` widget, command timer |
+| nf-fa-link | link | `"\uf0c1"` | `session.ssh.icon` |
+| nf-fa-lock | lock | `"\uf023"` | `session.root.icon`, `session.sudo.icon` |
+| nf-fa-server | server | `"\uf233"` | `session.remote.icon` |
+| nf-fa-terminal | terminal | `"\uf120"` | `session.multiplexer.icon` |
+| nf-dev-git_branch | branch | `"\ue725"` | `status_bar.git.icon` |
+| nf-pl-branch | branch (powerline) | `"\ue0a0"` | `status_bar.git.icon` |
+| nf-oct-git_branch | branch | `"\uf418"` | `status_bar.git.icon` |
+| nf-fa-refresh | refresh | `"\uf021"` | `status_bar.git.sync_icon` |
+| nf-fa-pencil | pencil | `"\uf040"` | `git.icons.modified` |
+| nf-fa-trash | trash | `"\uf1f8"` | `git.icons.deleted` |
+| nf-fa-question | question | `"\uf128"` | `git.icons.untracked` |
+| nf-fa-archive | archive | `"\uf187"` | `git.icons.stashed` |
+| nf-fa-eraser | eraser | `"\uf12d"` | a "clear terminal" button |
+| nf-dev-nodejs_small | Node.js | `"\ue718"` | a `node` widget |
+| nf-dev-rust | Rust | `"\ue7a8"` | a `rust` widget |
+| nf-dev-docker | Docker | `"\ue7b0"` | a Docker widget |
+| nf-seti-typescript | TypeScript | `"\ue628"` | a TypeScript widget |
 
 If you see empty boxes (or nothing) instead of an icon, the font used by that part of the UI
 doesn't contain it: set `status_bar.font.family` / `panes.header.font.family` to your Nerd Font, or

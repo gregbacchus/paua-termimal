@@ -141,20 +141,20 @@ session:
 # With Nerd Font icons, a red frame for root and a blue one for ssh:
 session:
   root:
-    icon: " "                                   # nf-fa-lock
+    icon: "\uf023 "                                   # nf-fa-lock
     window_color: { dark: "#6e1d1d", light: "#c43b3b" }
-  sudo:   { icon: " " }
+  sudo:   { icon: "\uf023 " }
   ssh:
-    icon: " "                                   # nf-fa-link
+    icon: "\uf0c1 "                                   # nf-fa-link
     background: "#4c8bf538"
     color: "#8db8ff"
     header_background: "#4c8bf524"
     header_color: "#cfe0ff"
     window_color: "#1d4f91"
-  remote: { icon: " " }                         # nf-fa-server
+  remote: { icon: "\uf233 " }                         # nf-fa-server
   multiplexer: { enabled: false }
 ```
 
-Good values: a trailing space inside the icon string (`" "`) separates it from the label;
+Good values: a trailing space inside the icon string (`"\uf023 "`) separates it from the label;
 `header_background` and badge `background` work best as translucent tints (`#rrggbb` + `14`–`38`),
 and `window_color` as a solid, clearly different colour (a warning, not a preference).

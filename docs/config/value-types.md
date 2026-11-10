@@ -82,10 +82,10 @@ An unbalanced `{` is kept as plain text.
 
 Icons are usually Nerd Font glyphs. In a double-quoted YAML string write them as escapes:
 
-- `""` for a codepoint up to U+FFFF,
+- `"\uf015"` for a codepoint up to U+FFFF,
 - `"\U000F0109"` (capital `U`, eight hex digits) above U+FFFF, which covers most Material Design
   icons,
-- a UTF-16 pair as found in icon cheat sheets and JSON (`"󰄉"`) is also accepted.
+- a UTF-16 pair as found in icon cheat sheets and JSON (`"\U000F0109"`) is also accepted.
 
 Single-quoted and plain YAML strings do not process escapes.
 
