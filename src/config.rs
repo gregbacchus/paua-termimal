@@ -821,8 +821,8 @@ pub struct TerminalConfig {
     /// Applies to terminals created after the change.
     pub scrollback: usize,
     pub shell: Option<String>,
-    /// Extra environment variables for new shells, e.g. `VTE_VERSION: "7600"`. They override
-    /// Paua's own (`TERM`, `COLORTERM`, `TERM_PROGRAM`).
+    /// Extra environment variables for new shells. They override Paua's own (`TERM`, `COLORTERM`,
+    /// `TERM_PROGRAM`, `VTE_VERSION`); an empty value removes the variable.
     pub env: std::collections::BTreeMap<String, String>,
     /// `auto` / `always` / `never`, or a map of options (see `ScrollbarConfig`). It only exists
     /// while there is scrollback.

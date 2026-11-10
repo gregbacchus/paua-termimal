@@ -11,7 +11,8 @@ colourful *shell*, but this one is a colourful **terminal** :)
 
 Paua is a native Rust GTK4 + libadwaita app for GNOME with a custom-coloured window frame
 (VS Code-like): app icon, menu bar and controls in the title bar, a status bar, and rounded content
-panes separated by draggable dividers. No web view; GTK's CSS is only used for styling.
+panes separated by draggable dividers, each pane holding as many **terminal tabs** as you like (tabs can be
+reordered and popped out into their own window). No web view; GTK's CSS is only used for styling.
 
 **Built on [Ghostty](https://ghostty.org/).** The terminal itself (escape-sequence parsing, the
 screen and scrollback, selection, mouse and key encoding) is
@@ -114,13 +115,13 @@ cargo run
 - **Animated colour changes**: swap a CSS class on the window and the `transition` rules fade it
   (GTK renders on the GPU). Whole-provider swaps may not animate; class toggles do.
 
-## Panes
+## Panes and tabs
 
-The app starts with one pane. The two icons at the top right of the title bar split the focused pane
+The app starts with one pane holding one terminal tab. The two icons at the top right of the title bar split the focused pane
 **right** or **down**. The new pane starts with one terminal in the selected tab's directory and
 takes focus. Dividers drag. Panes other than the focused one are dimmed/recoloured (see `panes.inactive`).
 
-Click **+** at the right of the pane header or press **Ctrl+Shift+T** by default to add a terminal tab there.
+**Every pane can hold several tabs.** Click **+** at the right of the pane header or press **Ctrl+Shift+T** by default to add a terminal tab there.
 Tabs divide the existing header row, each with its own path, buttons, session badges, colours,
 timer, and bell indicator. An underline in the window frame colour marks the selected tab. Click a
 header to switch, drag to reorder, or use **Ctrl+Shift+Page Up / Page Down** to cycle. When the headers
@@ -350,7 +351,11 @@ bar and the git widget all follow the shell's **working directory**. Paua learns
   Omarchy): Paua reads the shell's current directory from `/proc` a few times a second. Nothing to
   configure; it switches to `OSC 7` automatically as soon as the shell sends one.
 
-To also get the directory (and host) right over ssh, make the shell report it. For bash, in `~/.bashrc`:
+Paua also sets `VTE_VERSION=7600` for the shell, so bash and zsh send `OSC 7` and the `OSC 133` prompt marks
+(which drive the command timer and exit status) wherever the distribution's `/etc/profile.d/vte.sh` is
+loaded (Ubuntu loads it; on Arch add `source /etc/profile.d/vte.sh` to `~/.bashrc`). If you'd rather not claim to
+be VTE, set `terminal.env: { VTE_VERSION: "" }`. To get the directory (and host) right over ssh without that script, make the
+shell report it. For bash, in `~/.bashrc`:
 
 ```bash
 __paua_osc7() { printf '\e]7;file://%s%s\a' "$HOSTNAME" "$PWD"; }

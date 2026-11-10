@@ -127,7 +127,7 @@ panes:
 terminal:
   scrollback: 10000 # lines; applies to terminals created after the change
   shell: /usr/local/bin/nu # default: $SHELL
-  # env: { VTE_VERSION: "7600" } # extra environment variables for new shells (see docs/config/terminal.md)
+  # env: { VTE_VERSION: "" } # extra environment variables for new shells; an empty value removes one (Paua sets VTE_VERSION=7600 by default, see docs/config/terminal.md)
 
   # Scrollbar: a mode (auto | always | never) or a map. Every field is optional.
   scrollbar:

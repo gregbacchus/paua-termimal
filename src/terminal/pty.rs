@@ -40,8 +40,17 @@ pub fn spawn(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "paua");
+    // Distributions' VTE integration script (/etc/profile.d/vte.sh) makes bash and zsh report the
+    // directory (OSC 7) and prompt / exit-status marks (OSC 133) when it sees this, which is what
+    // Paua reads. 7600 is VTE 0.76 (it only has to be 3405 or newer).
+    cmd.env("VTE_VERSION", "7600");
     for (k, v) in env {
-        cmd.env(k, v); // the user's `terminal.env` wins over the defaults above
+        // The user's `terminal.env` wins over the defaults above; an empty value removes the variable.
+        if v.is_empty() {
+            cmd.env_remove(k);
+        } else {
+            cmd.env(k, v);
+        }
     }
     if let Some(cwd) = cwd.or_else(|| std::env::current_dir().ok()) {
         cmd.cwd(cwd);
@@ -86,17 +95,31 @@ pub mod anyhow_like {
 mod tests {
     use super::*;
 
-    /// `terminal.env` reaches the shell and wins over Paua's own variables.
-    #[test]
-    fn extra_environment_reaches_the_child_and_overrides_defaults() {
-        let env = vec![("VTE_VERSION".to_owned(), "7600".to_owned()), ("TERM_PROGRAM".to_owned(), "custom".to_owned())];
-        let pty = spawn(80, 24, Some("/usr/bin/env"), None, &env).expect("spawn env");
+    fn env_of(env: &[(String, String)]) -> String {
+        let pty = spawn(80, 24, Some("/usr/bin/env"), None, env).expect("spawn env");
         let mut out = String::new();
         while let Ok(chunk) = pty.output.recv_blocking() {
             out.push_str(&String::from_utf8_lossy(&chunk));
         }
-        assert!(out.contains("VTE_VERSION=7600"), "{out}");
+        out
+    }
+
+    /// `terminal.env` reaches the shell and wins over Paua's own variables.
+    #[test]
+    fn extra_environment_reaches_the_child_and_overrides_defaults() {
+        let env = vec![("VTE_VERSION".to_owned(), "7700".to_owned()), ("TERM_PROGRAM".to_owned(), "custom".to_owned())];
+        let out = env_of(&env);
+        assert!(out.contains("VTE_VERSION=7700") && !out.contains("VTE_VERSION=7600"), "{out}");
         assert!(out.contains("TERM_PROGRAM=custom") && !out.contains("TERM_PROGRAM=paua"), "{out}");
         assert!(out.contains("COLORTERM=truecolor"));
+    }
+
+    /// Shells are told they are in a VTE-compatible terminal by default, and an empty value turns
+    /// that (or any variable) off.
+    #[test]
+    fn vte_version_is_set_by_default_and_can_be_removed() {
+        assert!(env_of(&[]).contains("VTE_VERSION=7600"));
+        let out = env_of(&[("VTE_VERSION".to_owned(), String::new())]);
+        assert!(!out.contains("VTE_VERSION"), "{out}");
     }
 }

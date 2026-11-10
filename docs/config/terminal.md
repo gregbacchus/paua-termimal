@@ -4,7 +4,7 @@
 |---|---|---|---|
 | `terminal.scrollback` | integer | `10000` | Lines of scrollback per terminal (`0` = none). The memory is budgeted for terminals up to about 320 columns wide, so narrower terminals keep somewhat more lines than this and very wide ones somewhat fewer. **New terminals only** (panes created after the change). |
 | `terminal.shell` | string (path) | unset (`$SHELL`) | The program to run in a new pane, e.g. `/usr/local/bin/nu`. **New terminals only.** |
-| `terminal.env` | map of name to string | none | Extra environment variables for the shell, on top of Paua's own (`TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=paua`, which they can override). **New terminals only.** See the note on `VTE_VERSION` below. |
+| `terminal.env` | map of name to string | none | Extra environment variables for the shell, on top of Paua's own (`TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=paua`, `VTE_VERSION=7600`), which they can override; an **empty value removes** a variable. **New terminals only.** See the note on `VTE_VERSION` below. |
 
 Colours: the terminal's colour theme (`terminal.theme`) and its adjustments (`terminal.colors`) are on
 the [themes page](themes.md).
@@ -13,19 +13,23 @@ the [themes page](themes.md).
 terminal:
   scrollback: 10000
   # shell: /usr/bin/nu
-  # env: { VTE_VERSION: "7600" }   # see below
+  # env: { VTE_VERSION: "" }   # an empty value removes a variable (here: don't pretend to be VTE)
 ```
 
-### `VTE_VERSION` and directory tracking
+### `VTE_VERSION` and shell integration
 
-Paua follows the shell's working directory by itself (from `OSC 7` if the shell sends it, otherwise
-by reading `/proc`), so you normally need nothing. If you want bash or zsh to send `OSC 7` (for the
-directory on a remote host over ssh), distributions ship a script for VTE-based terminals
-(`/etc/profile.d/vte.sh`) that does it, but only when `VTE_VERSION` is 3405 or higher and `TERM` is
-`xterm*`. Setting `env: { VTE_VERSION: "7600" }` makes shells that load that script do so. It tells
-every program in the pane that it runs in a VTE terminal, which a few use to switch on VTE-specific
-behaviour, and the script is only loaded by shells that source `/etc/profile.d` (login shells on
-many systems), so a one-line `PROMPT_COMMAND` snippet (see the README) is usually the more reliable choice.
+Paua sets `VTE_VERSION=7600` for the shell by default. Distributions ship a script for VTE-based
+terminals (`/etc/profile.d/vte.sh`, loaded by bash and zsh on Ubuntu, Fedora and others) that, when it
+sees `VTE_VERSION` 3405 or newer and `TERM=xterm*`, makes the shell report its **directory and host**
+(`OSC 7`) and mark **prompts and exit statuses** (`OSC 133`) on every prompt. Paua uses both: the
+directory for the pane header, window colour and git widget (also over ssh), and the marks for the
+[command timer](panes.md#panesheadercommand_timer) and `{exit}`. So bash and zsh work out of the box
+wherever that script is loaded; where it isn't (for example on Arch, where login shells load it), add
+`source /etc/profile.d/vte.sh` to `~/.bashrc` or use the `PROMPT_COMMAND` snippet in the README. Without any
+of that, Paua still follows the directory by reading `/proc`.
+
+The cost: every program in the pane is told it runs in a VTE terminal, which a few use to turn on
+VTE-specific behaviour. Remove it with `env: { VTE_VERSION: "" }`.
 
 ## `terminal.scrollbar`
 

@@ -2,7 +2,7 @@
 
 Paua (te reo Māori for abalone shell: iridescent, colourful) is a **native Rust GTK4 + libadwaita
 terminal emulator for GNOME/Ubuntu**. VS Code-like custom-coloured window chrome (title bar, status
-bar, frame), tiled panes with draggable dividers, a real terminal (libghostty-vt: truecolor,
+bar, frame), tiled panes with draggable dividers, tabs inside each pane, a real terminal (libghostty-vt: truecolor,
 ligatures, smooth scrolling, selection, mouse reporting), and a lot of configuration. No web view;
 GTK CSS is only used for styling. It is a young project: expect to refactor.
 
