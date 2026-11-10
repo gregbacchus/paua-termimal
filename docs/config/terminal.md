@@ -2,7 +2,7 @@
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `terminal.scrollback` | integer | `10000` | Lines of scrollback per terminal. **New terminals only** (panes created after the change). |
+| `terminal.scrollback` | integer | `10000` | Lines of scrollback per terminal (`0` = none). The memory is budgeted for terminals up to about 320 columns wide, so narrower terminals keep somewhat more lines than this and very wide ones somewhat fewer. **New terminals only** (panes created after the change). |
 | `terminal.shell` | string (path) | unset (`$SHELL`) | The program to run in a new pane, e.g. `/usr/local/bin/nu`. **New terminals only.** |
 
 Colours: the terminal's colour theme (`terminal.theme`) and its adjustments (`terminal.colors`) are on

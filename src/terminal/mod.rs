@@ -393,6 +393,19 @@ pub(crate) fn apply_theme(term: &mut Terminal<'static, 'static>, theme: &crate::
     }
 }
 
+/// Memory budget per line of scrollback, in bytes. Despite the name and its documentation, the
+/// emulator's `max_scrollback` is a **byte** limit, not a number of lines, and it never goes below
+/// the memory for the visible screen: passing `10000` meant a few kilobytes, so only a few hundred
+/// lines survived, and fewer the wider the terminal was (a maximised window lost most of a long
+/// `ls`). A cell takes 8 bytes (plus styles and overhead), so this budgets for a 320-column line;
+/// narrower terminals keep more lines than asked for, wider ones somewhat fewer.
+const SCROLLBACK_BYTES_PER_LINE: usize = 3200;
+
+/// The emulator's scrollback limit (bytes) for `lines` lines of history; 0 = no scrollback.
+fn scrollback_bytes(lines: usize) -> usize {
+    lines.saturating_mul(SCROLLBACK_BYTES_PER_LINE)
+}
+
 mod imp {
     use super::*;
 
@@ -805,7 +818,7 @@ impl TermView {
         let mut term = Terminal::new(TerminalOptions {
             cols,
             rows,
-            max_scrollback: cfg.scrollback,
+            max_scrollback: scrollback_bytes(cfg.scrollback),
         })?;
 
         let pty = pty::spawn(cols, rows, cfg.shell.as_deref(), cfg.cwd.clone())?;
@@ -1587,6 +1600,29 @@ impl TermView {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    /// Lines of history that survive after printing `n` numbered lines into a `cols`-wide terminal.
+    fn history_after(max_scrollback: usize, cols: u16, n: usize) -> usize {
+        let mut t = Terminal::new(TerminalOptions { cols, rows: 50, max_scrollback }).unwrap();
+        for i in 0..n {
+            t.vt_write(format!("line {i}\r\n").as_bytes());
+        }
+        let sb = t.scrollbar().unwrap();
+        (sb.total as usize).saturating_sub(usize::from(t.rows().unwrap()))
+    }
+
+    /// The configured scrollback is a number of lines, whatever the terminal's width (a wide,
+    /// maximised terminal used to keep only a couple of hundred lines).
+    #[test]
+    fn scrollback_keeps_the_configured_number_of_lines_at_any_width() {
+        for cols in [80u16, 240, 320] {
+            let kept = history_after(scrollback_bytes(5_000), cols, 6_000);
+            assert!(kept >= 5_000, "{cols} columns kept only {kept} lines");
+        }
+        // Passing the number of lines straight through (the old behaviour) lost most of it.
+        assert!(history_after(5_000, 240, 6_000) < 1_000);
+        assert_eq!(scrollback_bytes(0), 0);
+    }
 
     /// The emulator must answer a cursor-position query (CSI 6n) exactly once.
     #[test]
