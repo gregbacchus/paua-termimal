@@ -4,7 +4,7 @@
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `watch` | bool | `true` | Reload `config.yaml` (and the focused pane's `.paua.yaml`) when the file changes on disk. With `false`, use *Reload Config* (File menu / palette) to re-read. The change itself is picked up live. |
+| `watch` | bool | `true` | Reload `config.yaml` (and the focused pane's `.paua.yaml`) when the file changes on disk. If either is a symbolic link (a dotfiles repository, stow...), the link, any links it passes through and the real file are all watched, so editing the real file reloads too. With `false`, use *Reload Config* (File menu / palette) to re-read. The change itself is picked up live. |
 
 ```yaml
 watch: true

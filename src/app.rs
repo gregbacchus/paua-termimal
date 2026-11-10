@@ -180,8 +180,8 @@ pub struct App {
     scheme: Cell<usize>,
     /// Header colours from the config (generated CSS).
     header_css: gtk::CssProvider,
-    user_monitor: RefCell<Option<gio::FileMonitor>>,
-    dir_monitor: RefCell<Option<gio::FileMonitor>>,
+    user_monitor: RefCell<Vec<gio::FileMonitor>>,
+    dir_monitor: RefCell<Vec<gio::FileMonitor>>,
     user_gen: Cell<u32>,
     dir_gen: Cell<u32>,
 }
@@ -1860,18 +1860,29 @@ impl App {
         win.toasts.add_toast(toast);
     }
 
+    /// Watch a config file (and, if it is a symbolic link, everything it points through) and call
+    /// `on_change` for every event. The caller debounces.
+    fn watch_file(path: &std::path::Path, on_change: impl Fn() + Clone + 'static) -> Vec<gio::FileMonitor> {
+        config::watch_paths(path)
+            .iter()
+            .filter_map(|p| {
+                let monitor = gio::File::for_path(p)
+                    .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+                    .ok()?;
+                let on_change = on_change.clone();
+                monitor.connect_changed(move |_, _, _, _| on_change());
+                Some(monitor)
+            })
+            .collect()
+    }
+
     fn setup_user_monitor(self: &Rc<Self>) {
-        *self.user_monitor.borrow_mut() = None;
+        self.user_monitor.borrow_mut().clear();
         if !self.cfg.borrow().watch {
             return;
         }
-        let file = gio::File::for_path(config::user_config_path());
-        let Ok(monitor) = file.monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
-        else {
-            return;
-        };
         let weak = Rc::downgrade(self);
-        monitor.connect_changed(move |_, _, _, _| {
+        let monitors = Self::watch_file(&config::user_config_path(), move || {
             let Some(app) = weak.upgrade() else { return };
             // Editors often write several events per save: debounce.
             let generation = app.user_gen.get().wrapping_add(1);
@@ -1880,12 +1891,12 @@ impl App {
             glib::timeout_add_local_once(Duration::from_millis(250), move || {
                 if let Some(app) = weak.upgrade() {
                     if app.user_gen.get() == generation {
-                        app.reload_user();
+                        app.reload_user(); // also re-creates the monitors (a link may now point elsewhere)
                     }
                 }
             });
         });
-        *self.user_monitor.borrow_mut() = Some(monitor);
+        *self.user_monitor.borrow_mut() = monitors;
     }
 
     fn reload_user(self: &Rc<Self>) {
@@ -1954,7 +1965,7 @@ impl App {
 
     /// Watch the most recently focused pane's `.paua.yaml` (if any, and if watching is enabled).
     fn watch_dir(self: &Rc<Self>) {
-        *self.dir_monitor.borrow_mut() = None;
+        self.dir_monitor.borrow_mut().clear();
         if !self.cfg.borrow().watch {
             return;
         }
@@ -1966,18 +1977,14 @@ impl App {
         else {
             return;
         };
-        let Ok(monitor) = gio::File::for_path(&path)
-            .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
-        else {
-            return;
-        };
         let weak = Rc::downgrade(self);
-        monitor.connect_changed(move |_, _, _, _| {
+        let watched = path.clone();
+        let monitors = Self::watch_file(&path, move || {
             let Some(app) = weak.upgrade() else { return };
             let generation = app.dir_gen.get().wrapping_add(1);
             app.dir_gen.set(generation);
             let weak = Rc::downgrade(&app);
-            let path = path.clone();
+            let path = watched.clone();
             glib::timeout_add_local_once(Duration::from_millis(250), move || {
                 let Some(app) = weak.upgrade() else { return };
                 if app.dir_gen.get() != generation {
@@ -1994,9 +2001,10 @@ impl App {
                     }
                 }
                 app.refresh_frames();
+                app.watch_dir(); // a link may now point elsewhere
             });
         });
-        *self.dir_monitor.borrow_mut() = Some(monitor);
+        *self.dir_monitor.borrow_mut() = monitors;
     }
 }
 

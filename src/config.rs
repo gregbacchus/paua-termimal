@@ -1149,6 +1149,29 @@ impl UserConfig {
     }
 }
 
+/// The paths to watch for changes to the config file at `path`: the path itself (so a replaced or
+/// re-pointed link is noticed) and, when it is a symbolic link (a dotfiles repository, stow...), every
+/// link in the chain and the real file, because editing the real file raises no event on the link.
+pub fn watch_paths(path: &Path) -> Vec<PathBuf> {
+    let mut out = vec![path.to_path_buf()];
+    let mut cur = path.to_path_buf();
+    for _ in 0..16 {
+        let Ok(target) = std::fs::read_link(&cur) else { break };
+        let next = if target.is_absolute() { target } else { cur.parent().unwrap_or(Path::new("/")).join(target) };
+        if out.contains(&next) {
+            break;
+        }
+        out.push(next.clone());
+        cur = next;
+    }
+    if let Ok(real) = std::fs::canonicalize(path) {
+        if !out.contains(&real) {
+            out.push(real);
+        }
+    }
+    out
+}
+
 pub fn user_config_path() -> PathBuf {
     glib::user_config_dir().join("paua").join("config.yaml")
 }
@@ -2008,6 +2031,29 @@ status_bar:
             }
         }
         assert!(unknown.is_empty(), "documented options that don't exist (renamed or removed?): {unknown:#?}");
+    }
+
+    #[test]
+    fn symlinked_config_files_are_watched_through_every_link() {
+        let base = std::env::temp_dir().join(format!("paua-watch-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("dotfiles")).unwrap();
+        std::fs::create_dir_all(base.join("cfg")).unwrap();
+        let real = base.join("dotfiles/config.yaml");
+        std::fs::write(&real, "watch: true\n").unwrap();
+        // cfg/config.yaml -> (relative) ../dotfiles/mid.yaml -> real
+        std::os::unix::fs::symlink(&real, base.join("dotfiles/mid.yaml")).unwrap();
+        std::os::unix::fs::symlink("../dotfiles/mid.yaml", base.join("cfg/config.yaml")).unwrap();
+
+        let paths = watch_paths(&base.join("cfg/config.yaml"));
+        let real = std::fs::canonicalize(&real).unwrap();
+        assert_eq!(paths[0], base.join("cfg/config.yaml"));
+        assert!(paths.contains(&base.join("cfg/../dotfiles/mid.yaml")), "{paths:?}");
+        assert!(paths.contains(&real), "{paths:?}");
+        // a plain file is watched on its own, and a missing one too
+        assert_eq!(watch_paths(&real), vec![real.clone()]);
+        assert_eq!(watch_paths(&base.join("missing.yaml")), vec![base.join("missing.yaml")]);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
