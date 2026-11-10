@@ -274,7 +274,7 @@ pub struct Metrics<'a> {
     pub cell_w: f32,
     pub cell_h: f32,
     pub ascent: f32,
-    /// Device pixels per logical pixel (the window's scale factor).
+    /// Device pixels per logical pixel, including fractional surface scales.
     pub scale: f32,
     pub hl_match: gdk::RGBA,
     pub hl_current: gdk::RGBA,
@@ -311,10 +311,8 @@ fn rect(x: f32, y: f32, w: f32, h: f32) -> graphene::Rect {
     graphene::Rect::new(x, y, w, h)
 }
 
-/// Characters whose glyphs extend above the bounds many fonts declare for them. GTK's GPU glyph
-/// cache clips glyphs to the declared bounds, which cuts the top off these (e.g. the hook of `[`
-/// in Victor Mono). Runs containing them are rasterised with Cairo instead, which draws the real
-/// outline.
+/// Route runs with tall glyphs through Cairo to avoid GTK caching them with too-small ink bounds.
+/// See the GTK glyph clipping workaround in README.md for the upstream fix and removal checks.
 fn needs_cairo(text: &str) -> bool {
     text.chars().any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '/' | '\\'))
 }
@@ -397,7 +395,9 @@ fn draw_text_at(snap: &gtk::Snapshot, m: &Metrics, layout: &pango::Layout, x: f3
         if let Some(tex) = outline_texture(m, layout, color, w, h, mx, my) {
             let s = m.scale.max(1.0);
             let bounds = graphene::Rect::new(-mx, -my, tex.width() as f32 / s, tex.height() as f32 / s);
-            snap.append_scaled_texture(&tex, gsk::ScalingFilter::Nearest, &bounds);
+            // The widget's origin can still be fractional relative to the surface. Linear
+            // sampling avoids jagged edges there and when a frame is rescaled by GTK.
+            snap.append_texture(&tex, &bounds);
         } else {
             // Fallback: a Cairo render node.
             let bounds = graphene::Rect::new(-mx, -my, w as f32 + 2.0 * mx, h as f32 + 2.0 * my);
@@ -648,7 +648,10 @@ pub fn draw(widget: &impl IsA<gtk::Widget>, st: &mut State, snap: &gtk::Snapshot
         cell_w: st.cell_w,
         cell_h: st.cell_h,
         ascent: st.ascent,
-        scale: widget.scale_factor().max(1) as f32,
+        scale: widget
+            .native()
+            .and_then(|native| native.surface())
+            .map_or_else(|| f64::from(widget.scale_factor()), |surface| surface.scale()) as f32,
         hl_match: tint(st.find_style.matched),
         hl_current: tint(st.find_style.current),
     };
@@ -857,6 +860,7 @@ mod tests {
             apply_inactive(&mut frame, &mut None, &style, 1.0);
             dim = style.dim;
         }
+        let scale: f32 = std::env::var("PAUA_SCALE").ok().and_then(|s| s.parse().ok()).unwrap_or(2.0);
         let m = Metrics {
             ctx: &ctx,
             fonts: &fonts,
@@ -864,7 +868,7 @@ mod tests {
             cell_w,
             cell_h,
             ascent,
-            scale: 1.0,
+            scale,
             hl_match: with_alpha(Rgb(255, 196, 60), 0.32),
             hl_current: with_alpha(Rgb(255, 140, 0), 0.65),
         };
@@ -872,7 +876,6 @@ mod tests {
         let (w, h) = (cell_w * f32::from(cols), cell_h * f32::from(rows));
         let extra: f32 = 2.0 * std::env::var("PAUA_PAD").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
         let (w, h) = (w + extra, h + extra);
-        let scale: f32 = std::env::var("PAUA_SCALE").ok().and_then(|s| s.parse().ok()).unwrap_or(2.0);
         let snap = gtk::Snapshot::new();
         snap.scale(scale, scale);
         let p: f32 = std::env::var("PAUA_PAD").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0);

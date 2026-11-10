@@ -12,6 +12,7 @@ mod pty;
 mod scrollbar;
 mod search;
 mod render;
+mod touchpad;
 
 use std::cell::{Cell, RefCell};
 use std::io::Write;
@@ -25,6 +26,7 @@ use libghostty_vt::{
     key::Mods,
     mouse as gmouse,
     render::{CellIterator, RowIterator},
+    screen::Screen,
     selection::gesture::{AutoscrollTickEvent, DragEvent, Gesture, PressEvent, ReleaseEvent},
     terminal::{Mode, ScrollViewport},
 };
@@ -33,6 +35,10 @@ pub use links::{UrlModifier, UrlStyle};
 pub use render::{InactiveStyle, Rgb};
 pub use scrollbar::{ButtonStyle, ScrollbarMode, ScrollbarStyle};
 pub use search::{CaseMode, FindOptions, FindStatus, FindStyle, MAX_MATCHES};
+
+// Give touchpad swipes more travel while the fingers are down and a shorter coast on release.
+const SURFACE_SCROLL_FACTOR: f32 = 4.0;
+const TOUCHPAD_SCROLL_FRICTION: f32 = 8.0;
 
 /// Space between the terminal's edge and its text, in pixels. The terminal background fills it.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -119,6 +125,9 @@ pub struct State {
     frac: f32,
     /// Smooth scrolling: pixels still to be applied by the tick callback (wheel easing).
     pending: f32,
+    /// Touchpad velocity in pixels per second after releasing a swipe.
+    scroll_velocity: f32,
+    touchpad_swipe: touchpad::Swipe,
     last_tick_us: i64,
 
     focused: bool,
@@ -250,6 +259,30 @@ impl State {
         self.term.scrollbar().map(|s| s.offset == 0).unwrap_or(true)
     }
 
+    fn cancel_scroll_motion(&mut self) {
+        self.pending = 0.0;
+        self.scroll_velocity = 0.0;
+        self.touchpad_swipe = touchpad::Swipe::default();
+    }
+
+    fn can_coast(&self) -> bool {
+        self.term.active_screen().ok() == Some(Screen::Primary)
+            && !self.tracking
+            && matches!(self.dragging, mouse::Dragging::None)
+    }
+
+    fn coast_step(&mut self, dt: f32) -> f32 {
+        // Below this speed there is less than one pixel of motion left.
+        if self.scroll_velocity.abs() < TOUCHPAD_SCROLL_FRICTION || !self.can_coast() {
+            self.scroll_velocity = 0.0;
+            return 0.0;
+        }
+        let next = self.scroll_velocity * (-TOUCHPAD_SCROLL_FRICTION * dt).exp();
+        let step = (self.scroll_velocity - next) / TOUCHPAD_SCROLL_FRICTION;
+        self.scroll_velocity = next;
+        step
+    }
+
     /// Apply a pixel scroll delta (positive = towards newer output).
     fn scroll_by(&mut self, dy: f32) {
         // No scrollback on the alternate screen / when apps track the mouse; leave those alone.
@@ -326,7 +359,7 @@ impl State {
         if m.row < top || m.row >= top + rows {
             let target = m.row.saturating_sub(rows / 3);
             self.frac = 0.0;
-            self.pending = 0.0;
+            self.cancel_scroll_motion();
             self.activity_us = glib::monotonic_time();
             self.term.scroll_viewport(ScrollViewport::Row(target));
         }
@@ -335,7 +368,7 @@ impl State {
     fn write_pty(&mut self, bytes: &[u8]) {
         self.term.scroll_viewport(ScrollViewport::Bottom);
         self.frac = 0.0;
-        self.pending = 0.0;
+        self.cancel_scroll_motion();
         let _ = self.term.set_selection(None);
         self.write_raw(bytes);
     }
@@ -479,6 +512,7 @@ mod imp {
             st.cols = cols;
             st.rows = rows;
             st.frac = 0.0;
+            st.scroll_velocity = 0.0;
             let _ = st.term.resize(cols, rows, st.cell_w as u32, st.cell_h as u32);
             let _ = st.master.resize(portable_pty::PtySize {
                 rows,
@@ -550,7 +584,7 @@ impl TermView {
             if !alt {
                 st.term.vt_write(b"\x1b[3J\x1b[H\x1b[2J");
                 st.frac = 0.0;
-                st.pending = 0.0;
+                st.cancel_scroll_motion();
             }
         }
         self.send_bytes(b"\x0c");
@@ -807,7 +841,7 @@ impl TermView {
             st.cols = 0; // force size_allocate to recompute the grid with the new metrics
             st.rows = 0;
             st.frac = 0.0;
-            st.pending = 0.0;
+            st.cancel_scroll_motion();
         }
         self.queue_allocate();
         self.queue_draw();
@@ -890,6 +924,8 @@ impl TermView {
             rows,
             frac: 0.0,
             pending: 0.0,
+            scroll_velocity: 0.0,
+            touchpad_swipe: touchpad::Swipe::default(),
             last_tick_us: 0,
             focused: false,
             pwd_flag,
@@ -1173,6 +1209,7 @@ impl TermView {
         {
             let mut guard = self.imp().state.borrow_mut();
             let Some(st) = guard.as_mut() else { return };
+            st.cancel_scroll_motion();
             st.pointer = (x, y);
             st.mods = mods;
             if button == 1 && st.scroll_ui_press(x, y) {
@@ -1511,21 +1548,38 @@ impl TermView {
         self.set_cursor_from_name(Some("text"));
 
         // --- Smooth scrolling ---
-        // Touchpads/kinetic scrolling give pixel deltas: applied directly. Mouse wheel clicks are
-        // converted to a pixel target that the tick callback eases in over ~100ms.
+        // Touchpad deltas move the viewport immediately. Mouse wheel clicks are converted to a
+        // pixel target that the tick callback eases in over ~100ms.
         let scroll = gtk::EventControllerScroll::new(
             gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::KINETIC,
         );
+        scroll.connect_scroll_begin(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            move |_| {
+                if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
+                    st.cancel_scroll_motion();
+                }
+            }
+        ));
         scroll.connect_scroll(glib::clone!(
             #[weak(rename_to = obj)]
             self,
             #[upgrade_or]
             glib::Propagation::Proceed,
             move |ctrl, _dx, dy| {
-                let wheel = ctrl.unit() == gdk::ScrollUnit::Wheel;
+                let unit = ctrl.unit();
+                let wheel = unit == gdk::ScrollUnit::Wheel;
                 let mods = mouse::mods_from(ctrl.current_event_state());
                 if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
-                    let dy = dy as f32;
+                    st.scroll_velocity = 0.0;
+                    // Surface deltas are in pixels. Wheel deltas use detents and are converted
+                    // to rows below.
+                    let raw = dy as f32;
+                    let dy = match unit {
+                        gdk::ScrollUnit::Surface => raw * SURFACE_SCROLL_FACTOR,
+                        _ => raw,
+                    };
                     if st.mouse_reporting(mods) {
                         // Programs with mouse tracking (vim, htop...) get wheel button events.
                         let n = st.wheel_lines(dy, wheel);
@@ -1550,11 +1604,36 @@ impl TermView {
                     } else if wheel {
                         st.pending += dy * st.cell_h * 3.0;
                     } else {
-                        st.scroll_by(dy);
+                        let gain = if unit == gdk::ScrollUnit::Surface
+                            && ctrl.current_event_device().is_some_and(|d| d.source() == gdk::InputSource::Touchpad)
+                        {
+                            st.touchpad_swipe.gain(raw, ctrl.current_event_time())
+                        } else {
+                            1.0
+                        };
+                        st.scroll_by(dy * gain);
                     }
                 }
                 obj.queue_draw();
                 glib::Propagation::Stop
+            }
+        ));
+        scroll.connect_decelerate(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            move |ctrl, _vx, vy| {
+                if ctrl.unit() != gdk::ScrollUnit::Surface
+                    || !ctrl.current_event_device().is_some_and(|d| d.source() == gdk::InputSource::Touchpad)
+                    || !obj.settings().is_gtk_enable_animations()
+                {
+                    return;
+                }
+                let velocity = vy as f32 * SURFACE_SCROLL_FACTOR;
+                if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
+                    if velocity.is_finite() && st.can_coast() {
+                        st.scroll_velocity = velocity;
+                    }
+                }
             }
         ));
         self.add_controller(scroll);
@@ -1607,6 +1686,7 @@ impl TermView {
                     }
                 }
 
+                let mut scroll_step = 0.0;
                 if st.pending.abs() > 0.01 {
                     let step = if st.pending.abs() < 0.5 {
                         st.pending
@@ -1614,7 +1694,16 @@ impl TermView {
                         st.pending * (1.0 - (-dt / 0.045).exp())
                     };
                     st.pending -= step;
-                    st.scroll_by(step);
+                    scroll_step += step;
+                }
+                if st.scroll_velocity != 0.0 {
+                    scroll_step += st.coast_step(dt);
+                }
+                if scroll_step != 0.0 {
+                    st.scroll_by(scroll_step);
+                    if st.frac == 0.0 && ((scroll_step < 0.0 && st.at_top()) || (scroll_step > 0.0 && st.at_bottom())) {
+                        st.scroll_velocity = 0.0;
+                    }
                     if st.link.is_some() {
                         st.refresh_link();
                     }

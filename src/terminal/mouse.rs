@@ -62,14 +62,14 @@ impl State {
 
     pub fn scroll_to_bottom(&mut self) {
         self.frac = 0.0;
-        self.pending = 0.0;
+        self.cancel_scroll_motion();
         self.activity_us = glib::monotonic_time();
         self.term.scroll_viewport(ScrollViewport::Bottom);
     }
 
     fn scroll_to_row(&mut self, row: f32) {
         self.frac = 0.0;
-        self.pending = 0.0;
+        self.cancel_scroll_motion();
         self.activity_us = glib::monotonic_time();
         self.term.scroll_viewport(ScrollViewport::Row(row.round().max(0.0) as usize));
     }

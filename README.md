@@ -187,8 +187,8 @@ windows, and GNOME centres new windows itself.
 
 Working in the code (compiles, starts without errors, selection/mouse API checked by unit tests;
 not yet visually verified): truecolor cells, bold/italic/underline/strike, wide glyphs, procedural
-box-drawing, cursor, resize + reflow, IME/compose input, pixel-smooth scrolling (touchpad direct,
-wheel eased), pane title follows the shell's cwd (OSC 7).
+box-drawing, cursor, resize + reflow, IME/compose input, pixel-smooth scrolling (faster touchpad
+swipes travel farther and coast after release, wheel steps ease), pane title follows the shell's cwd (OSC 7).
 
 - **Selection:** drag to select; double-click = word, triple-click = line; Alt+drag = rectangle.
   Dragging above/below the pane autoscrolls. Selecting copies to PRIMARY (middle-click pastes);
@@ -419,17 +419,35 @@ Badge text, icon and colours are configurable per kind, and each kind can be dis
 sees what runs locally on the pty, so once you are inside a remote shell only the `ssh` process and
 (if the remote shell reports its directory) the host name are visible, not what happens inside.
 
-Rendering note: GTK's GPU glyph cache clips the top off tall glyphs `( ) [ ] { } / \` in fonts
-whose declared glyph bounds are too small (Victor Mono). Runs containing those characters are drawn
-through Cairo instead (`needs_cairo` in `src/terminal/render.rs`; drawn with a `GskCairoNode` because
-`Snapshot::append_cairo` mispositions content under scale transforms such as HiDPI). A visual test harness renders
-sample text to PNG with the real renderer: `PAUA_PNG_DIR=/tmp/x cargo test render_sample -- --ignored`
-(`PAUA_SCALE=1.0` for 1x).
-
 Not done yet: hyperlinks, cursor blink, kitty keyboard encoder, kitty graphics, redraw only dirty
 rows (currently rebuilds every frame), double-line box-drawing characters, right-click menu.
 Bash/zsh on Ubuntu only emit OSC 7 inside VTE terminals; nushell emits it natively. A later step is
 injecting our own shell integration.
+
+## GTK glyph clipping workaround
+
+[GTK #7400](https://gitlab.gnome.org/GNOME/gtk/-/work_items/7400) tracks clipped text on GTK's GPU
+renderers. Cairo's FreeType backend can report a glyph's ink bounds without accounting for hinting
+at the size it is drawn. GTK uses those bounds to size its glyph cache, which can drop the top
+stroke of a bracket. We reproduced this with VictorMono Nerd Font Propo 11 at 100% on OpenGL and
+Vulkan. Paua draws runs containing `()[]{}/\` into Cairo textures at the window's display scale.
+
+[Cairo !686](https://gitlab.freedesktop.org/cairo/cairo/-/merge_requests/686) is the pending fix for
+[Cairo #987](https://gitlab.freedesktop.org/cairo/cairo/-/work_items/987). The draft restored the
+missing stroke in Paua with stock GTK and the fallback disabled. Once it ships, verify it in the
+system Cairo packages Paua supports before removing `needs_cairo`, the texture cache, and the
+Cairo drawing branch in [`src/terminal/render.rs`](src/terminal/render.rs). Keep the fallback for
+supported systems that still ship an affected Cairo version.
+
+To verify removal, temporarily route all runs through `Snapshot::append_layout`. With VictorMono
+Nerd Font Propo installed, render the sample at `PAUA_SCALE=1` (the original reproduction), `1.5`,
+and `2`, with `GSK_RENDERER=gl` and `GSK_RENDERER=vulkan`. Also check brackets during live typing
+and scrolling, which exercise partial redraws.
+
+```bash
+mkdir -p /tmp/paua-render
+PAUA_PNG_DIR=/tmp/paua-render PAUA_SCALE=1 GSK_RENDERER=gl cargo test render_sample -- --ignored
+```
 
 ## Title bar buttons
 
