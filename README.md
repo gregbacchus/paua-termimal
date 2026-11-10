@@ -131,9 +131,9 @@ background tint, text colour) and three buttons on the right:
 
 Closing a window closes its panes; the app ends when the last window closes. Each window has its own
 frame colour and its own focused pane, and the split buttons in a window's title bar act on that
-window. Path prefixes can be rewritten with `panes.header.path_replacements` (plain prefixes matched
-on whole path components, `~`/`$HOME` allowed), e.g. `$HOME` -> `~` or a Nerd Font house icon
-(`"\uf015"`). If the text is too wide for the pane, the path is shortened from its middle one whole
+window. Parts of the path can be rewritten with `panes.header.path_replacements` (a `from` that starts with `/`, or
+`$HOME` / `~`, matches the start of the path; any other, such as `Downloads`, matches that folder
+name anywhere in the path), e.g. `$HOME` -> a Nerd Font house icon (`"\uf015"`) and `Downloads` -> a download icon. If the text is too wide for the pane, the path is shortened from its middle one whole
 segment at a time (`~/code/…/ui-sandbox/src`; `trim_path`, `path_ellipsis`), after the replacements
 and re-fitted as the pane is resized. Button icons are configurable by name (`pop_out_icon` etc.).
 

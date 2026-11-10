@@ -453,11 +453,23 @@ fn expand_home(s: &str, home: Option<&str>) -> String {
     }
 }
 
-/// Rewrite the start of `path` using the first matching replacement. A prefix only matches whole
-/// path components (`/home/a` matches `/home/a` and `/home/a/x`, not `/home/ab`).
-pub fn replace_prefix(path: &str, reps: &[PathReplacement], home: Option<&str>) -> String {
-    for r in reps {
-        let from = expand_home(&r.from, home);
+/// Apply the path replacements to `path` (components always match whole, never part of a name).
+///
+/// - A replacement whose `from` **starts with `/`** matches the **start** of the path; the first such
+///   match wins and the rest of the path follows. (`~` and `$HOME` stand for your home directory, so
+///   they start with `/` once expanded.)
+/// - Any other `from` (`Downloads`, `src/terminal`) matches those components **anywhere** in what is
+///   left of the path, each time they occur (first listed wins at a given place).
+///
+/// Replaced text is never matched again.
+pub fn replace_path(path: &str, reps: &[PathReplacement], home: Option<&str>) -> String {
+    let expanded: Vec<(String, &PathReplacement)> = reps.iter().map(|r| (expand_home(&r.from, home), r)).collect();
+    let anchored = |from: &str| from.starts_with('/');
+
+    // 1. The start of the path.
+    let mut head = String::new();
+    let mut rest = path;
+    for (from, r) in expanded.iter().filter(|(f, _)| anchored(f)) {
         let from = if from.len() > 1 { from.trim_end_matches('/') } else { from.as_str() };
         if from.is_empty() {
             continue;
@@ -466,11 +478,42 @@ pub fn replace_prefix(path: &str, reps: &[PathReplacement], home: Option<&str>) 
             return r.to.clone();
         }
         let sep = if from == "/" { "" } else { "/" };
-        if let Some(rest) = path.strip_prefix(&format!("{from}{sep}")) {
-            return format!("{}/{rest}", r.to.trim_end_matches('/'));
+        if let Some(r2) = path.strip_prefix(&format!("{from}{sep}")) {
+            head = format!("{}/", r.to.trim_end_matches('/'));
+            rest = r2;
+            break;
         }
     }
-    path.to_owned()
+
+    // 2. Components anywhere in the rest.
+    let patterns: Vec<(Vec<&str>, &str)> = expanded
+        .iter()
+        .filter(|(f, _)| !anchored(f))
+        .map(|(f, r)| (f.trim_matches('/').split('/').filter(|c| !c.is_empty()).collect::<Vec<_>>(), r.to.as_str()))
+        .filter(|(p, _)| !p.is_empty())
+        .collect();
+    if patterns.is_empty() {
+        return format!("{head}{rest}");
+    }
+    let comps: Vec<&str> = rest.split('/').collect();
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < comps.len() {
+        let hit = patterns
+            .iter()
+            .find(|(p, _)| !comps[i].is_empty() && comps.len() - i >= p.len() && comps[i..i + p.len()] == p[..]);
+        match hit {
+            Some((p, to)) => {
+                out.push((*to).to_owned());
+                i += p.len();
+            }
+            None => {
+                out.push(comps[i].to_owned());
+                i += 1;
+            }
+        }
+    }
+    format!("{head}{}", out.join("/"))
 }
 
 /// Final path component, or the whole path for `/`.
@@ -516,19 +559,39 @@ mod tests {
     #[test]
     fn prefix_replacement_matches_whole_components() {
         let reps = [rep("/home/greg", "~")];
-        assert_eq!(replace_prefix("/home/greg", &reps, None), "~");
-        assert_eq!(replace_prefix("/home/greg/code/x", &reps, None), "~/code/x");
-        assert_eq!(replace_prefix("/home/gregory/x", &reps, None), "/home/gregory/x");
-        assert_eq!(replace_prefix("/etc/hosts", &reps, None), "/etc/hosts");
+        assert_eq!(replace_path("/home/greg", &reps, None), "~");
+        assert_eq!(replace_path("/home/greg/code/x", &reps, None), "~/code/x");
+        assert_eq!(replace_path("/home/gregory/x", &reps, None), "/home/gregory/x");
+        assert_eq!(replace_path("/etc/hosts", &reps, None), "/etc/hosts");
+    }
+
+    #[test]
+    fn components_match_anywhere_in_the_path() {
+        let home = Some("/home/greg");
+        let reps = [rep("$HOME", "H"), rep("Downloads", "D")];
+        assert_eq!(replace_path("/home/greg/Downloads", &reps, home), "H/D");
+        assert_eq!(replace_path("/home/greg/Downloads/x/Downloads", &reps, home), "H/D/x/D");
+        assert_eq!(replace_path("/mnt/Downloads/a", &reps, home), "/mnt/D/a"); // not under $HOME
+        assert_eq!(replace_path("/home/greg/MyDownloads", &reps, home), "H/MyDownloads"); // whole components only
+        assert_eq!(replace_path("/home/greg", &reps, home), "H");
+        // multi-component, and the first listed wins at one place
+        let reps = [rep("src/terminal", "T"), rep("src", "S"), rep("terminal", "X")];
+        assert_eq!(replace_path("/p/src/terminal/a", &reps, None), "/p/T/a");
+        assert_eq!(replace_path("/p/src/other", &reps, None), "/p/S/other");
+        assert_eq!(replace_path("/p/terminal", &reps, None), "/p/X");
+        // replaced text isn't matched again
+        assert_eq!(replace_path("/a/x", &[rep("x", "y"), rep("y", "z")], None), "/a/y");
+        // an absolute `from` only matches at the start
+        assert_eq!(replace_path("/a/home/greg", &[rep("/home/greg", "H")], None), "/a/home/greg");
     }
 
     #[test]
     fn replacements_expand_home_and_first_match_wins() {
         let reps = [rep("$HOME/work", "W"), rep("~", "\u{f015}")];
         let home = Some("/home/greg");
-        assert_eq!(replace_prefix("/home/greg/work/app", &reps, home), "W/app");
-        assert_eq!(replace_prefix("/home/greg/other", &reps, home), "\u{f015}/other");
-        assert_eq!(replace_prefix("/home/greg", &reps, home), "\u{f015}");
+        assert_eq!(replace_path("/home/greg/work/app", &reps, home), "W/app");
+        assert_eq!(replace_path("/home/greg/other", &reps, home), "\u{f015}/other");
+        assert_eq!(replace_path("/home/greg", &reps, home), "\u{f015}");
     }
 
     #[test]

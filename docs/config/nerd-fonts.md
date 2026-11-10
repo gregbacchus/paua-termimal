@@ -61,6 +61,12 @@ Codepoints that are handy here (Nerd Fonts v3):
 
 | Glyph | Name | Write as | Good for |
 |---|---|---|---|
+| nf-fa-desktop | desktop | `"\\uf108"` | replacing `~/Desktop` |
+| nf-fa-file_text_o | document | `"\\uf0f6"` | replacing `~/Documents` |
+| nf-fa-picture_o | picture | `"\\uf03e"` | replacing `~/Pictures` |
+| nf-fa-music | music | `"\\uf001"` | replacing `~/Music` |
+| nf-fa-video_camera | video | `"\\uf03d"` | replacing `~/Videos` |
+| nf-fa-folder | folder | `"\\uf07b"` | a general directory replacement |
 | nf-fa-home | home | `"\uf015"` | `panes.header.path_replacements` for `$HOME` |
 | nf-fa-folder_open | open folder | `"\uf07c"` | `dirs` widget, header |
 | nf-fa-download | download | `"\uf019"` | replacing `~/Downloads` |
@@ -83,6 +89,31 @@ Codepoints that are handy here (Nerd Fonts v3):
 | nf-dev-rust | Rust | `"\ue7a8"` | a `rust` widget |
 | nf-dev-docker | Docker | `"\ue7b0"` | a Docker widget |
 | nf-seti-typescript | TypeScript | `"\ue628"` | a TypeScript widget |
+
+## Path replacements in the pane header
+
+`panes.header.path_replacements` swaps parts of the working directory for something shorter, which is
+where Nerd Font icons shine: a house instead of `/home/you`, a download arrow instead of `Downloads`.
+There are two kinds (see [the reference](panes.md#panesheaderpath_replacements)): a `from` that **starts
+with `/`** (`/mnt/data/code`; `$HOME` and `~` are your home directory, so they count) matches the
+**start** of the path and the first match wins, so list the more specific ones first; anything else
+(`Downloads`) matches that folder name **anywhere** in the path. Matching is always by whole path component.
+
+```yaml
+panes:
+  header:
+    path_replacements:
+      - { from: "$HOME/code", to: "\uf1c9" }   # nf-fa-file_code_o (anchored, so before $HOME)
+      - { from: $HOME,        to: "\uf015" }   # nf-fa-home
+      - { from: Downloads,    to: "\uf019" }   # nf-fa-download
+      - { from: Documents,    to: "\uf0f6" }   # nf-fa-file_text_o
+      - { from: Desktop,      to: "\uf108" }   # nf-fa-desktop
+```
+
+`/home/me/Downloads` becomes the house icon, a `/`, then the download icon; `~/code/paua/src` becomes
+the code icon followed by `/paua/src`. Add a space inside the string (`"\uf015 "`) if you want a gap
+after an icon, and use a font that has the icons for the header (`panes.header.font.family`, or leave
+it unset to use the terminal font).
 
 If you see empty boxes (or nothing) instead of an icon, the font used by that part of the UI
 doesn't contain it: set `status_bar.font.family` / `panes.header.font.family` to your Nerd Font, or

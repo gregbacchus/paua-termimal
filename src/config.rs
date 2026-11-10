@@ -551,8 +551,9 @@ pub struct HeaderConfig {
     /// `start` (alias `left`), `center` or `end` (alias `right`).
     pub align: HeaderAlign,
     pub font: HeaderFont,
-    /// Rewrite the start of the path. First match wins; matching is by whole path component.
-    /// `from` may use `~` or `$HOME`. Plain prefixes, not regular expressions.
+    /// Rewrite parts of the path. A `from` that starts with `/` (`/home/me`; `~` and `$HOME` are your home
+    /// directory, so they count) matches the start of the path (first match wins); any other
+    /// (`Downloads`) matches those whole path components anywhere in it. Plain text, not regular expressions.
     pub path_replacements: Vec<PathReplacement>,
     /// When the text is too wide for the pane, shorten the path from its middle, whole segments
     /// at a time (`~/a/b/c/d` -> `~/a/…/d`).

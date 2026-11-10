@@ -868,7 +868,7 @@ impl App {
                 let home = glib::home_dir().display().to_string();
                 let here = pane.cwd.borrow().clone();
                 for dir in self.recent_dirs.borrow().iter().filter(|d| **d != here) {
-                    let shown = crate::header::replace_prefix(
+                    let shown = crate::header::replace_path(
                         &dir.display().to_string(),
                         &cfg.panes.header.path_replacements,
                         Some(&home),
@@ -923,7 +923,7 @@ impl App {
                         .filter(|d| Some(*d) != here.as_ref())
                         .map(|d| {
                             let full = d.display().to_string();
-                            let shown = header::replace_prefix(&full, &cfg.panes.header.path_replacements, Some(&home));
+                            let shown = header::replace_path(&full, &cfg.panes.header.path_replacements, Some(&home));
                             (shown, full)
                         })
                         .collect()
@@ -952,7 +952,7 @@ impl App {
         let cwd_text = cwd.display().to_string();
         let home = glib::home_dir().display().to_string();
         let ctx = statusbar::Context {
-            path: header::replace_prefix(&cwd_text, &cfg.panes.header.path_replacements, Some(&home)),
+            path: header::replace_path(&cwd_text, &cfg.panes.header.path_replacements, Some(&home)),
             dir: header::dir_name(&cwd_text).to_owned(),
             host: pane.host.borrow().clone(),
             user: glib::user_name().to_string_lossy().into_owned(),
@@ -1219,7 +1219,7 @@ impl App {
             let home = glib::home_dir().display().to_string();
             pane.header.set_input(header::HeaderInput {
                 template: hc.template.clone(),
-                path: header::replace_prefix(&cwd, &hc.path_replacements, Some(&home)),
+                path: header::replace_path(&cwd, &hc.path_replacements, Some(&home)),
                 dir: header::dir_name(&cwd).to_owned(),
                 title: pane.title.borrow().clone(),
                 host: pane.host.borrow().clone(),

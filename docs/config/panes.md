@@ -42,7 +42,7 @@ the command timer chip and the bell flash.
 |---|---|---|---|
 | `panes.header.template` | [template](value-types.md#templates) | `{path}` | The text. Placeholders: `{path}` (working directory after `path_replacements`), `{dir}` (its last component), `{title}` (the title the program set, OSC 0/2), `{host}`, `{user}`, `{session}` (detected session, e.g. `ssh me@box`). `{title\|path}` = the title if there is one, else the path. |
 | `panes.header.align` | `start` \| `center` \| `end` | `center` | Alignment of the text. Aliases: `left` = `start`, `right` = `end`. |
-| `panes.header.path_replacements` | list | `[{ from: $HOME, to: "~" }]` | Rewrite the start of the path. See below. |
+| `panes.header.path_replacements` | list | `[{ from: $HOME, to: "~" }]` | Rewrite the start of the path, or folder names anywhere in it. See below. |
 | `panes.header.trim_path` | bool | `true` | When the text is too wide for the pane, drop whole path segments from the middle (`~/a/b/c/d` becomes `~/a/…/d`). |
 | `panes.header.path_ellipsis` | string | `…` | What replaces the removed segments (`...` also works). |
 | `panes.header.background` | [themed tint](value-types.md#colours) | unset | Tint laid over the pane background. `#rrggbbaa` for translucency. |
@@ -88,26 +88,38 @@ unset. See [Nerd Fonts](nerd-fonts.md).
 
 ### `panes.header.path_replacements[]`
 
-A list; **the first match wins**. Matching is by whole path component (`$HOME` doesn't match
-`/home/gregbacchus2`). Plain prefixes, not regular expressions.
+A list of plain-text replacements (not regular expressions). Matching is always by **whole path
+components** (`$HOME` doesn't match `/home/gregbacchus2`, and `Downloads` doesn't match
+`MyDownloads`). There are two kinds, told apart by `from`:
+
+- **Anchored: `from` starts with `/`** (`/mnt/data/code`). `~` and `$HOME` are your home directory, so
+  `$HOME` and `$HOME/code` count too. It matches the **start** of the path, **the first one that
+  matches wins**, and the rest of the path follows it.
+- **Anywhere:** anything that doesn't start with `/` (`Downloads`, `node_modules`, `src/terminal`). Those components are
+  replaced wherever they occur in the part of the path that is left after the anchored replacement,
+  every time they occur; where several would match at the same place the first listed wins.
+
+Replaced text is never matched again, so `$HOME/Downloads` with the two replacements below shows as
+`house/download`, not a re-replaced mess.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `panes.header.path_replacements[].from` | string | required | The prefix to replace. `~` and `$HOME` mean your home directory. |
+| `panes.header.path_replacements[].from` | string | required | What to replace. If it starts with `/` (or is `~` / `$HOME`, your home directory) it matches the start of the path; otherwise, folder name(s) such as `Downloads` or `src/terminal` match anywhere. `~` and `$HOME` mean your home directory. |
 | `panes.header.path_replacements[].to` | string | required | What to show instead. |
 
 ```yaml
 panes:
   header:
     path_replacements:
-      - { from: $HOME,             to: "\uf015" }   # nf-fa-home
-      - { from: "$HOME/Downloads", to: "\uf019" }   # nf-fa-download
-      - { from: "$HOME/code",      to: "\uf1c9" }   # nf-fa-file_code_o
+      - { from: $HOME,      to: "\uf015" }   # nf-fa-home: /home/me/... starts with the house
+      - { from: Downloads,  to: "\uf019" }   # nf-fa-download: wherever a "Downloads" folder is
+      - { from: "$HOME/code", to: "\uf1c9" } # (anchored: would have to come before "$HOME" to win)
 ```
 
-List the more specific prefixes **first** (the first match wins). Use a Nerd Font icon as the
-replacement for a compact header: `"\uf015"` for home. Quote strings containing `$` and escapes
-with double quotes.
+With the first two, `/home/me/Downloads` shows as the house icon, a `/`, then the download icon, and
+`/mnt/backup/Downloads/2024` as `/mnt/backup/<download icon>/2024`. Among the **anchored** ones list the
+more specific first (`$HOME/code` before `$HOME`). Use a Nerd Font icon as the replacement for a
+compact header: `"\uf015"` for home. Quote strings containing `$` and escapes with double quotes.
 
 ### `panes.header.command_timer`
 

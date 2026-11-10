@@ -59,12 +59,13 @@ panes:
       family: Ubuntu Nerd Font # default: the terminal font
       size: 9 # points
       weight: normal
-    # Rewrite the start of the path (whole components, first match wins; ~ and $HOME allowed).
-    # Plain prefixes, not regular expressions. The default is [{ from: $HOME, to: "~" }].
+    # Rewrite parts of the path (whole components; plain text, not regular expressions; the default
+    # is [{ from: $HOME, to: "~" }]). A `from` starting with `/` ($HOME and ~ are your home directory) matches the
+    # START of the path, first match wins; any other (Downloads) matches that folder name ANYWHERE.
     path_replacements:
+      - { from: "$HOME/code", to: "\uf1c9" } # nf-fa-file_code_o (anchored: more specific first)
       - { from: $HOME, to: "\uf015" } # nf-fa-home
-      - { from: "$HOME/Downloads", to: "\uf019" } # nf-fa-download
-      - { from: "$HOME/code", to: "\uf1c9" } # nf-fa-file_code_o
+      - { from: Downloads, to: "\uf019" } # nf-fa-download, wherever the folder is
     # Too wide for the pane? Remove whole path segments from the middle: ~/a/b/c/d -> ~/a/…/d
     trim_path: true
     path_ellipsis: "…" # or "..."
