@@ -62,7 +62,7 @@ panes:
 
 ## `panes.header`
 
-Each tab's header: a text template, the copy / pop-out / close buttons, session badges,
+Each tab's header: a text template, the copy / pop-out (open in a new window) / close buttons, session badges,
 the command timer chip and the bell flash.
 
 | Key | Type | Default | Description |

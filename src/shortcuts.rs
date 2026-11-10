@@ -68,7 +68,7 @@ pub const ACTIONS: &[Action] = &[
     action!(Window, "next_tab", "Next tab", "Ctrl+Shift+Page Down"),
     action!(Window, "split_right", "Split right"),
     action!(Window, "split_down", "Split down"),
-    action!(Window, "pop_out", "Open pane in new window"),
+    action!(Window, "pop_out", "Open in new window"),
     action!(Window, "close_pane", "Close pane"),
     action!(Window, "copy", "Copy", "Ctrl+Shift+C", "Ctrl+Insert"),
     action!(

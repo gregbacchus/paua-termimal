@@ -46,7 +46,7 @@ shortcuts:
 | `next_tab` | Select the next tab | Ctrl+Shift+Page Down |
 | `split_right` | Split the pane to the right | — |
 | `split_down` | Split the pane below | — |
-| `pop_out` | Move the pane to a new window | — |
+| `pop_out` | Open the tab in a new window (a pane with a single tab moves whole, when its window has another pane) | — |
 | `close_pane` | Close the focused pane and all its tabs | — |
 | `copy` | Copy the selection | Ctrl+Shift+C, Ctrl+Insert |
 | `paste` | Paste from the clipboard | Ctrl+Shift+V, Ctrl+Shift+Insert |

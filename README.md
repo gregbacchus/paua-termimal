@@ -132,8 +132,9 @@ the New Tab icon, and indicator colours are configurable under `panes.tabs`.
 
 - **Copy Path** appears beside the path when you hover over its header or focus the button with
   the keyboard. It copies that tab's real working directory.
-- **Open in New Window** moves the whole pane and its running tabs to another window. It is
-  available when the original window has another pane.
+- **Open in New Window** moves that tab, with its running shell, into a window of its own when its
+  pane has several tabs. A pane with a single tab moves as a whole instead, which is available when
+  its window has another pane.
 - **×** closes that tab. **Ctrl+Shift+W** closes the selected tab. Closing the last tab collapses its
   pane, or closes the window if it was the last pane.
 - **File → Close Pane** ends all sessions in the pane, with confirmation when there is more than one tab.
@@ -368,7 +369,7 @@ settings portal); if yours doesn't provide one, View -> Cycle Colour Scheme swit
 ## Menus and shortcuts
 
 The title-bar menus: **File** (New Window Ctrl+Shift+N, New Tab Ctrl+Shift+T, Close Tab Ctrl+Shift+W,
-previous / next tab, split right / down, open the pane in a new window, Close Pane,
+previous / next tab, split right / down, open the tab in a new window, Close Pane,
 open / reload the config, Quit Ctrl+Q), **Edit** (Copy Ctrl+Shift+C,
 Paste Ctrl+Shift+V, copy the working directory, Clear Terminal, Find Ctrl+Shift+F, Command Palette
 Ctrl+Shift+P), **View** (cycle the colour scheme) and **Help** (Keyboard Shortcuts and About).
@@ -413,7 +414,7 @@ filtered as you type with a fuzzy match (`spr` finds *Split right*; matched lett
 **Esc** closes. While you've typed something, the first row is **Find "…" in output**, which switches
 to find with your text. What it offers:
 
-- **Commands:** find in output, new/close/previous/next tab, split right/down, open pane in new window, close pane, copy working
+- **Commands:** find in output, new/close/previous/next tab, split right/down, open in new window, close pane, copy working
   directory, new window, cycle colour scheme, reload config, open config file;
 - **your own commands** (`palette.commands`: a title and text to type into the focused pane);
 - **Go to** any terminal tab, including tabs in other panes and windows;

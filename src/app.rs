@@ -2,7 +2,7 @@
 //!
 //! Layout model: every window is a full app window (title bar, status bar, workbench). Each owns
 //! a tree under `Win::root` (a pane card, or `Paned` splits of pane cards), its own frame colour,
-//! and its own "active" pane (the most recently focused one in that window). Popping a pane out
+//! and its own "active" pane (the most recently focused one in that window). Popping a pane (or a tab) out
 //! creates another such window. The app ends when the last window closes.
 
 use std::cell::{Cell, RefCell};
@@ -129,7 +129,8 @@ impl Pane {
 struct TerminalTab {
     term: TermView,
     header: PaneHeader,
-    pane: Weak<Pane>,
+    /// The pane this tab is in (it changes when the tab is popped out into a window of its own).
+    pane: RefCell<Weak<Pane>>,
     cwd: RefCell<PathBuf>,
     host: RefCell<String>,
     title: RefCell<String>,
@@ -144,8 +145,12 @@ struct TerminalTab {
 }
 
 impl TerminalTab {
+    fn pane(&self) -> Option<Rc<Pane>> {
+        self.pane.borrow().upgrade()
+    }
+
     fn win(&self) -> Option<Rc<Win>> {
-        self.pane.upgrade().map(|pane| pane.win.borrow().clone())
+        self.pane().map(|pane| pane.win.borrow().clone())
     }
 }
 
@@ -237,7 +242,7 @@ const MENUS: &[(&str, &[&[(&str, &str)]])] = &[
             &[("_New Window", "win.new-window")],
             &[("New _Tab", "win.new-tab"), ("Close Ta_b", "win.close-tab"), ("Previous Tab", "win.previous-tab"), ("Next Tab", "win.next-tab")],
             &[("Split _Right", "win.split-right"), ("Split _Down", "win.split-down")],
-            &[("Open Pane in New _Window", "win.pop-out"), ("_Close Pane", "win.close-pane")],
+            &[("Open in New _Window", "win.pop-out"), ("_Close Pane", "win.close-pane")],
             &[("Open Config _File", "win.open-config"), ("_Reload Config", "win.reload-config")],
             &[("_Quit", "app.quit")],
         ],
@@ -612,8 +617,16 @@ impl App {
         }
     }
 
-    /// A rounded card with one row of headers above the terminal stack. The caller attaches it.
+    /// A rounded card with one row of headers above the terminal stack, and one terminal tab. The
+    /// caller attaches it.
     fn new_pane(self: &Rc<Self>, win: &Rc<Win>, cwd: Option<PathBuf>) -> (Rc<Pane>, Rc<TerminalTab>) {
+        let pane = self.build_pane(win);
+        let tab = self.new_tab(&pane, cwd);
+        (pane, tab)
+    }
+
+    /// An empty pane (no tabs yet): the card, its header row, and the controls that act on it.
+    fn build_pane(self: &Rc<Self>, win: &Rc<Win>) -> Rc<Pane> {
         let card = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .css_classes(["pane"])
@@ -670,7 +683,6 @@ impl App {
             focus_seq: Cell::new(0),
         });
         self.panes.borrow_mut().push(pane.clone());
-        let tab = self.new_tab(&pane, cwd);
 
         let (app, group) = (Rc::downgrade(self), Rc::downgrade(&pane));
         add.connect_clicked(move |_| {
@@ -690,7 +702,7 @@ impl App {
             }
         });
         pane.card.add_controller(focus);
-        (pane, tab)
+        pane
     }
 
     fn update_new_tab_tooltip(&self, button: &gtk::Button) {
@@ -728,7 +740,7 @@ impl App {
         let pane = Rc::new(TerminalTab {
             term: term.clone(),
             header,
-            pane: Rc::downgrade(group),
+            pane: RefCell::new(Rc::downgrade(group)),
             cwd: RefCell::new(cwd),
             host: RefCell::new(glib::host_name().to_string()),
             title: RefCell::default(),
@@ -895,7 +907,7 @@ impl App {
             let target = target.clone();
             move |_, x, y| {
                 let tab = target.upgrade()?;
-                let pane = tab.pane.upgrade()?;
+                let pane = tab.pane()?;
                 let header = tab.header.widget();
                 (pane.tabs.borrow().len() > 1 && tab_header_hit(header, x, y))
                     .then(|| gdk::ContentProvider::for_value(&header.to_value()))
@@ -906,7 +918,7 @@ impl App {
         let drop = gtk::DropTarget::new(gtk::Widget::static_type(), gdk::DragAction::MOVE);
         drop.connect_drop(move |_, value, x, _| {
             let (Ok(source), Some(tab)) = (value.get::<gtk::Widget>(), target.upgrade()) else { return false };
-            let Some(pane) = tab.pane.upgrade() else { return false };
+            let Some(pane) = tab.pane() else { return false };
             let after = x >= f64::from(tab.header.widget().width()) / 2.0;
             pane.reorder_tab(&source, &tab, after)
         });
@@ -914,10 +926,11 @@ impl App {
     }
 
     fn add_tab(self: &Rc<Self>, current: &Rc<TerminalTab>) {
-        let Some(pane) = current.pane.upgrade() else { return };
+        let Some(pane) = current.pane() else { return };
         let cwd = current.cwd.borrow().clone();
         let tab = self.new_tab(&pane, Some(cwd));
         self.set_active(&tab);
+        self.update_pane_ui(); // a second tab makes pop-out available
         Self::focus_later(&tab.term);
     }
 
@@ -1000,7 +1013,7 @@ impl App {
     }
 
     fn activate_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
-        let Some(pane) = tab.pane.upgrade() else { return };
+        let Some(pane) = tab.pane() else { return };
         pane.select_tab(tab);
         self.set_active(tab);
         Self::focus_later(&tab.term);
@@ -1209,7 +1222,7 @@ impl App {
             }
             "previous_tab" | "next_tab" => {
                 let Some(tab) = pane else { return };
-                let Some(group) = tab.pane.upgrade() else { return };
+                let Some(group) = tab.pane() else { return };
                 let next = {
                     let tabs = group.tabs.borrow();
                     let Some(current) = tabs.iter().position(|candidate| Rc::ptr_eq(candidate, &tab)) else { return };
@@ -1332,7 +1345,7 @@ impl App {
     /// Split `win`'s active pane, putting a new terminal (same directory) to its right or below.
     fn split(self: &Rc<Self>, win: &Rc<Win>, orientation: gtk::Orientation) {
         let Some(target) = self.win_active(win) else { return };
-        let Some(pane) = target.pane.upgrade() else { return };
+        let Some(pane) = target.pane() else { return };
         let card = pane.card.clone();
         let Some(parent) = card.parent() else { return };
 
@@ -1388,7 +1401,7 @@ impl App {
     }
 
     fn close_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
-        let Some(pane) = tab.pane.upgrade() else { return };
+        let Some(pane) = tab.pane() else { return };
         let Some(index) = pane.tabs.borrow().iter().position(|candidate| Rc::ptr_eq(candidate, tab)) else { return };
         let was_active = self.is_win_active(tab);
         let was_global = self.is_active_anywhere(tab);
@@ -1409,6 +1422,7 @@ impl App {
         }
         pane.stack.remove(&tab.term);
         tab.term.shutdown();
+        self.update_pane_ui(); // one tab left may mean pop-out is no longer available
         if let Some(next) = next.filter(|_| was_active) {
             if was_global {
                 self.set_active(&next);
@@ -1423,7 +1437,7 @@ impl App {
     }
 
     fn request_close_pane(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
-        let Some(pane) = tab.pane.upgrade() else { return };
+        let Some(pane) = tab.pane() else { return };
         let count = pane.tabs.borrow().len();
         if count <= 1 {
             self.close_pane(&pane);
@@ -1478,17 +1492,22 @@ impl App {
         win.window.close();
     }
 
-    /// Move a pane and its running tabs into a new full window. Offered only while its current
-    /// window would keep at least one other pane.
+    /// Open the tab in a window of its own: only that tab when its pane has several, otherwise the
+    /// whole pane (offered only while its current window would keep at least one other pane). The
+    /// terminals keep running.
     fn pop_out(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
-        let Some(pane) = tab.pane.upgrade() else { return };
+        let Some(pane) = tab.pane() else { return };
+        if pane.tabs.borrow().len() > 1 {
+            self.pop_out_tab(tab, &pane);
+            return;
+        }
         let from = pane.win.borrow().clone();
         if self.panes_in(&from).len() < 2 || !self.detach_card(&pane) {
             return;
         }
 
         let win = self.create_window(false);
-        if Self::find_target(&from).is_some_and(|t| t.pane.upgrade().is_some_and(|p| Rc::ptr_eq(&p, &pane))) {
+        if Self::find_target(&from).is_some_and(|t| t.pane().is_some_and(|p| Rc::ptr_eq(&p, &pane))) {
             if let Some(old) = from.find_pane.replace(Weak::new()).upgrade() {
                 old.term.find_clear();
             }
@@ -1513,19 +1532,69 @@ impl App {
         Self::focus_later(&tab.term);
     }
 
+    /// Move one tab out of a pane that has several into a new window. Its shell keeps running.
+    fn pop_out_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>, old: &Rc<Pane>) {
+        let Some(index) = old.tabs.borrow().iter().position(|t| Rc::ptr_eq(t, tab)) else { return };
+        let from = old.win.borrow().clone();
+        let selected = old.selected_tab().is_some_and(|t| Rc::ptr_eq(&t, tab));
+        let next = {
+            let mut tabs = old.tabs.borrow_mut();
+            tabs.remove(index);
+            selected.then(|| tabs[index.min(tabs.len() - 1)].clone())
+        };
+        old.headers.remove(tab.header.widget());
+        old.update_tab_headers();
+        if let Some(next) = &next {
+            old.select_tab(next);
+        }
+        old.stack.remove(&tab.term);
+        if Self::find_target(&from).is_some_and(|t| Rc::ptr_eq(&t, tab)) {
+            if let Some(found) = from.find_pane.replace(Weak::new()).upgrade() {
+                found.term.find_clear();
+            }
+        }
+
+        // A new window with a pane of its own holding just this tab.
+        let win = self.create_window(false);
+        let pane = self.build_pane(&win);
+        *tab.pane.borrow_mut() = Rc::downgrade(&pane);
+        pane.tabs.borrow_mut().push(tab.clone());
+        pane.headers.append(tab.header.widget());
+        pane.stack.add_child(&tab.term);
+        pane.update_tab_headers();
+        pane.select_tab(tab);
+        win.root.append(&pane.card);
+
+        pane.focus_seq.set(self.next_focus_seq());
+        *self.active.borrow_mut() = Rc::downgrade(tab);
+        if let Some(active) = self.win_active(&from) {
+            self.retarget_find(&active);
+            self.refresh_window_title(&from);
+        }
+
+        self.refresh_header(tab);
+        self.update_pane_ui();
+        self.refresh_frames();
+        self.watch_dir();
+        win.window.present();
+        pane.reveal_tab(tab);
+        Self::focus_later(&tab.term);
+    }
+
     /// Per window: dim every pane except that window's active one (only when it has several),
     /// enable the pop-out button only where it makes sense, and refresh the window title.
     fn update_pane_ui(&self) {
         for win in self.all_wins() {
             self.refresh_status(&win);
             let panes = self.panes_in(&win);
-            let active = self.win_active(&win).and_then(|tab| tab.pane.upgrade());
+            let active = self.win_active(&win).and_then(|tab| tab.pane());
             let multiple = panes.len() > 1;
             for p in &panes {
                 let inactive = multiple && !active.as_ref().is_some_and(|a| Rc::ptr_eq(a, p));
                 for tab in p.tabs.borrow().iter() {
                     tab.term.set_dimmed(inactive);
-                    tab.header.pop_out.set_sensitive(multiple);
+                    // A tab can leave a pane that has several; a whole pane can leave a window that has several.
+                    tab.header.pop_out.set_sensitive(multiple || p.tabs.borrow().len() > 1);
                 }
                 if inactive {
                     p.card.add_css_class("inactive");
@@ -1682,7 +1751,7 @@ impl App {
     }
 
     fn set_active(self: &Rc<Self>, pane: &Rc<TerminalTab>) {
-        let Some(group) = pane.pane.upgrade() else { return };
+        let Some(group) = pane.pane() else { return };
         if !group.selected_tab().is_some_and(|tab| Rc::ptr_eq(&tab, pane)) {
             return;
         }
@@ -2102,6 +2171,7 @@ mod tests {
         let left = app.panes_in(&win).remove(0);
         let first = left.selected_tab().unwrap();
         assert!(!left.header_row.has_css_class("multiple-tabs"));
+        assert!(!first.header.pop_out.is_sensitive(), "a lone tab in a lone pane has nothing to pop out of");
 
         first.term.type_text("sleep 0.1; printf 'hidden-%s\\n\\a' output\r");
         let add = &left.new_tab_button;
@@ -2110,6 +2180,10 @@ mod tests {
         assert!(!Rc::ptr_eq(&first, &second));
         assert_eq!(*first.cwd.borrow(), *second.cwd.borrow());
         assert!(left.header_row.has_css_class("multiple-tabs"));
+        assert!(
+            first.header.pop_out.is_sensitive() && second.header.pop_out.is_sensitive(),
+            "with several tabs a tab can be popped out even from a lone pane"
+        );
         wait_for("both tab headers should be visible in one row", || {
             let Some(a) = first.header.widget().compute_bounds(&left.header_row) else { return false };
             let Some(b) = second.header.widget().compute_bounds(&left.header_row) else { return false };
@@ -2157,16 +2231,18 @@ mod tests {
         assert!(!left.header_row.has_css_class("multiple-tabs"));
         assert!(Rc::ptr_eq(&app.win_active(&win).unwrap(), &third));
 
+        // `fourth` shares its pane with `third`: only `fourth` leaves, and its shell keeps running.
         fourth.header.pop_out.emit_clicked();
-        let moved = third.win().unwrap();
+        let moved = fourth.win().unwrap();
         assert!(!Rc::ptr_eq(&win, &moved));
-        assert!(Rc::ptr_eq(&moved, &fourth.win().unwrap()));
+        assert!(Rc::ptr_eq(&win, &third.win().unwrap()));
         assert_eq!(app.panes_in(&moved).len(), 1);
-        assert_eq!(right.tabs.borrow().len(), 2);
-        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &fourth));
-        assert!(Rc::ptr_eq(&App::find_target(&win).unwrap(), &second));
-        third.header.close.emit_clicked();
-        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &fourth));
+        assert_eq!(right.tabs.borrow().len(), 1);
+        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &third));
+        let moved_pane = fourth.pane().unwrap();
+        assert!(!Rc::ptr_eq(&moved_pane, &right) && moved_pane.tabs.borrow().len() == 1);
+        assert!(!moved_pane.header_row.has_css_class("multiple-tabs"));
+        assert!(Rc::ptr_eq(&App::find_target(&win).unwrap(), &third));
         fourth.term.type_text("printf 'still-%s\\n' running\r");
         wait_for("the remaining tab lost its shell after pop-out", || {
             fourth.term.find(crate::terminal::FindOptions { query: "still-running".into(), ..Default::default() }).total == 1

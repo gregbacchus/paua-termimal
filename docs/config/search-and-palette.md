@@ -25,7 +25,7 @@ search:
 ## `palette`
 
 Built-in entries include *Find in output, Split right, Split down, New tab, Close tab, Previous tab,
-Next tab, Open pane in new window, Close pane, Clear terminal, Copy working directory, New window,
+Next tab, Open in new window, Close pane, Clear terminal, Copy working directory, New window,
 Cycle colour scheme, Reload config,* and *Open config file*. You can also jump to tabs across panes
 and windows, `cd` to recent directories, `ssh` to your SSH hosts, and run your own commands.
 
