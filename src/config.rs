@@ -304,6 +304,8 @@ pub struct UserConfig {
     pub search: SearchConfig,
     /// The command palette (the same box, `>` mode).
     pub palette: PaletteConfig,
+    /// Action IDs mapped to keyboard shortcuts.
+    pub shortcuts: crate::shortcuts::Config,
     /// The bar at the bottom of each window.
     pub status_bar: StatusBarConfig,
 }
@@ -511,9 +513,36 @@ pub struct PanesConfig {
     pub inactive: InactiveConfig,
     /// The line above each terminal: text, font, alignment.
     pub header: HeaderConfig,
+    /// The shared tab row and its indicators.
+    pub tabs: TabsConfig,
     /// Space between a pane's edge and its text, in pixels (the pane background fills it).
     /// A number for all sides, or `{ top, right, bottom, left }` / `{ x, y }`. Default 0.
     pub padding: crate::terminal::Padding,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, serde(deny_unknown_fields))]
+#[serde(default)]
+pub struct TabsConfig {
+    pub min_width: u16,
+    pub new_tab_icon: String,
+    pub active_underline_height: u8,
+    /// Unset follows each window's effective frame colour.
+    pub active_color: Option<ThemedTint>,
+    /// Unset uses amber for tabs that rang the bell in the background.
+    pub attention_color: Option<ThemedTint>,
+}
+
+impl Default for TabsConfig {
+    fn default() -> Self {
+        Self {
+            min_width: 170,
+            new_tab_icon: "list-add-symbolic".into(),
+            active_underline_height: 3,
+            active_color: None,
+            attention_color: None,
+        }
+    }
 }
 
 /// Where the command timer chip sits in the pane header.
@@ -555,7 +584,7 @@ pub struct HeaderConfig {
     /// directory, so they count) matches the start of the path (first match wins); any other
     /// (`Downloads`) matches those whole path components anywhere in it. Plain text, not regular expressions.
     pub path_replacements: Vec<PathReplacement>,
-    /// When the text is too wide for the pane, shorten the path from its middle, whole segments
+    /// When the text is too wide for its header, shorten the path from its middle, whole segments
     /// at a time (`~/a/b/c/d` -> `~/a/…/d`).
     pub trim_path: bool,
     /// What replaces the removed segments.
@@ -567,6 +596,7 @@ pub struct HeaderConfig {
     pub color: Option<ThemedTint>,
     /// Icon names (any icon in the theme, or ours: `pop-out-symbolic`, `pop-out-pip-symbolic`).
     pub pop_out_icon: String,
+    /// Closes this tab, or its pane if it is the last tab.
     pub close_icon: String,
     pub copy_icon: String,
     /// A running-command timer in the header.
@@ -1051,6 +1081,7 @@ impl Default for UserConfig {
             session: SessionConfig::default(),
             search: SearchConfig::default(),
             palette: PaletteConfig::default(),
+            shortcuts: Default::default(),
             status_bar: StatusBarConfig::default(),
         }
     }
@@ -1419,7 +1450,8 @@ pub struct WidgetConfig {
     pub tooltip: Option<String>,
     /// Clock: `strftime` format (default `%H:%M`).
     pub format: Option<String>,
-    /// Makes it a button: `split_right`, `split_down`, `find`, `palette`, `clear`, `close_pane`,
+    /// Makes it a button: `split_right`, `split_down`, `new_tab`, `close_tab`, `previous_tab`,
+    /// `next_tab`, `find`, `palette`, `clear`, `close_pane`,
     /// `pop_out`, `copy_path`, `new_window`, `cycle_scheme`, `reload_config`, `open_config`,
     /// `type:<text>` (typed into the pane + Enter) or `exec:<command>` (background, result as a toast).
     pub action: Option<String>,
@@ -1903,6 +1935,7 @@ status_bar:
         add("window", field_names::<WindowConfig>());
         add("panes", field_names::<PanesConfig>());
         add("panes.inactive", field_names::<InactiveConfig>());
+        add("panes.tabs", field_names::<TabsConfig>());
         add("panes.header", field_names::<HeaderConfig>());
         add("panes.header.font", field_names::<HeaderFont>());
         add("panes.header.path_replacements[]", field_names::<PathReplacement>());
@@ -1954,9 +1987,18 @@ status_bar:
     }
 
     #[test]
+    fn shortcut_reference_covers_every_builtin_action() {
+        let docs = include_str!("../docs/config/shortcuts.md");
+        for action in crate::shortcuts::ACTIONS {
+            let row = format!("| `{}` |", action.id);
+            assert!(docs.lines().any(|line| line.starts_with(&row)), "missing shortcut docs for {}", action.id);
+        }
+    }
+
+    #[test]
     fn docs_do_not_describe_options_that_do_not_exist() {
         let known: std::collections::HashSet<String> = all_option_paths().into_iter().collect();
-        let roots = ["watch", "font", "window", "panes", "terminal", "session", "search", "palette", "status_bar"];
+        let roots = ["watch", "font", "window", "panes", "terminal", "session", "search", "palette", "shortcuts", "status_bar"];
         let mut unknown = Vec::new();
         for line in docs_text().lines().filter(|l| l.starts_with("| `")) {
             let Some(path) = line[3..].split('`').next() else { continue };

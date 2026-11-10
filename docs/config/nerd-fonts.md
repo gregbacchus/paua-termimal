@@ -115,6 +115,9 @@ the code icon followed by `/paua/src`. Add a space inside the string (`"\uf015 "
 after an icon, and use a font that has the icons for the header (`panes.header.font.family`, or leave
 it unset to use the terminal font).
 
+The pane header buttons and the shared New Tab button use GTK icon names. See the
+[tab settings](panes.md#panestabs) and [header settings](panes.md#panesheader).
+
 If you see empty boxes (or nothing) instead of an icon, the font used by that part of the UI
 doesn't contain it: set `status_bar.font.family` / `panes.header.font.family` to your Nerd Font, or
 check it is installed (`fc-list | grep -i nerd`). Emoji (for example `"🚨"`) come from the

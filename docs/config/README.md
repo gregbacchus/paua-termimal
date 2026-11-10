@@ -30,6 +30,7 @@ point with every option set is [`examples/config.yaml`](../../examples/config.ya
 | `terminal.theme`, `terminal.colors` | [Themes](themes.md) |
 | `search` | [Search and palette](search-and-palette.md) |
 | `palette` | [Search and palette](search-and-palette.md) |
+| `shortcuts` | [Keyboard shortcuts](shortcuts.md) |
 | `status_bar` | [Status bar](status-bar.md) |
 
 Using icons? See [Nerd Fonts: fonts, icons and good values](nerd-fonts.md).
@@ -59,7 +60,8 @@ The frame (title bar, status bar and borders) takes the first of:
 3. `window.color`,
 4. the built-in default: `#4a2f80` (dark) / `#7a56c2` (light).
 
-Changes of frame colour animate.
+Changes of frame colour animate. By default the selected tab's underline follows that colour.
+You can override it in the [tab settings](panes.md#panestabs).
 
 ## Notation on these pages
 

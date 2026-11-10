@@ -13,9 +13,10 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-use gtk::{gdk, glib, pango, prelude::*};
+use gtk::{glib, pango, prelude::*};
 
 use crate::palette::{self, PaletteItem};
+use crate::shortcuts::{Bindings, Scope};
 use crate::terminal::{CaseMode, FindOptions, FindStatus};
 
 const DEBOUNCE_MS: u64 = 80;
@@ -55,6 +56,7 @@ struct Inner {
     list: gtk::ListBox,
 
     mode: Cell<Mode>,
+    shortcuts: RefCell<Rc<Bindings>>,
     /// Case handling when the "match case" toggle is off (from the config).
     base_case: Cell<CaseMode>,
     last_query: RefCell<String>,
@@ -85,7 +87,7 @@ pub struct SearchBox {
 }
 
 impl SearchBox {
-    pub fn new() -> Self {
+    pub fn new(shortcuts: Rc<Bindings>) -> Self {
         let chip = gtk::Label::builder()
             .css_classes(["mode-chip"])
             .valign(gtk::Align::Center)
@@ -185,6 +187,7 @@ impl SearchBox {
             scrolled,
             list,
             mode: Cell::new(Mode::Idle),
+            shortcuts: RefCell::new(shortcuts),
             base_case: Cell::new(CaseMode::Smart),
             last_query: RefCell::default(),
             generation: Cell::new(0),
@@ -222,11 +225,6 @@ impl SearchBox {
             });
         }
 
-        // Enter: next match (find) or run the selected item (command).
-        inner.entry.connect_activate({
-            let weak = weak.clone();
-            move |_| with(&weak, Inner::enter)
-        });
         prev.connect_clicked({
             let weak = weak.clone();
             move |_| {
@@ -254,53 +252,34 @@ impl SearchBox {
             }
         });
 
-        // Keys the entry itself would swallow: Esc, Shift+Enter, Up/Down, PageUp/PageDown.
+        // Handle mode-specific shortcuts before the entry edits text or moves its cursor.
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         keys.connect_key_pressed({
             let weak = weak.clone();
-            move |_, key, _, state| {
+            move |controller, _, _, _| {
                 let Some(i) = weak.upgrade() else { return glib::Propagation::Proceed };
-                let mode = i.mode.get();
-                if mode == Mode::Idle {
-                    return glib::Propagation::Proceed;
+                let scope = match i.mode.get() {
+                    Mode::Idle => return glib::Propagation::Proceed,
+                    Mode::Find => Scope::Find,
+                    Mode::Command => Scope::Palette,
+                };
+                let Some(event) = controller.current_event() else { return glib::Propagation::Proceed };
+                let bindings = i.shortcuts.borrow().clone();
+                match bindings.contextual_action(scope, &event) {
+                    Some("close_search") => i.close(true),
+                    Some("find_next") => i.step(true),
+                    Some("find_previous") => i.step(false),
+                    Some("find_toggle_case") => i.case_btn.set_active(!i.case_btn.is_active()),
+                    Some("find_toggle_regex") => i.regex_btn.set_active(!i.regex_btn.is_active()),
+                    Some("palette_next") => i.move_selection(1),
+                    Some("palette_previous") => i.move_selection(-1),
+                    Some("palette_page_down") => i.move_selection(6),
+                    Some("palette_page_up") => i.move_selection(-6),
+                    Some("palette_run") => i.run_selected(),
+                    _ => return glib::Propagation::Proceed,
                 }
-                let shift = state.contains(gdk::ModifierType::SHIFT_MASK);
-                match (key, mode) {
-                    (gdk::Key::Escape, _) => {
-                        i.close(true);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Return | gdk::Key::KP_Enter, Mode::Find) if shift => {
-                        i.step(false);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Down, Mode::Find) => {
-                        i.step(true);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Up, Mode::Find) => {
-                        i.step(false);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Down | gdk::Key::Tab, Mode::Command) => {
-                        i.move_selection(1);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Up | gdk::Key::ISO_Left_Tab, Mode::Command) => {
-                        i.move_selection(-1);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Page_Down, Mode::Command) => {
-                        i.move_selection(6);
-                        glib::Propagation::Stop
-                    }
-                    (gdk::Key::Page_Up, Mode::Command) => {
-                        i.move_selection(-6);
-                        glib::Propagation::Stop
-                    }
-                    _ => glib::Propagation::Proceed,
-                }
+                glib::Propagation::Stop
             }
         });
         inner.entry.add_controller(keys);
@@ -367,18 +346,18 @@ impl SearchBox {
         self.inner.max_results.set(n.clamp(5, 200));
     }
 
-    /// Start a find (Ctrl+Shift+F).
+    /// Start a find.
     pub fn open_find(&self) {
         self.inner.open_find();
     }
 
-    /// Open the command palette (Ctrl+Shift+P, or a click on the box).
+    /// Open the command palette.
     pub fn open_command(&self) {
         self.inner.open_command();
     }
 
-    pub fn is_open(&self) -> bool {
-        self.inner.mode.get() != Mode::Idle
+    pub fn is_find_open(&self) -> bool {
+        self.inner.mode.get() == Mode::Find
     }
 
     /// What the box currently asks for in find mode.
@@ -391,6 +370,13 @@ impl SearchBox {
         self.inner.base_case.set(case);
         if self.inner.mode.get() == Mode::Idle {
             self.inner.regex_btn.set_active(regex);
+        }
+    }
+
+    pub fn set_shortcuts(&self, shortcuts: Rc<Bindings>) {
+        *self.inner.shortcuts.borrow_mut() = shortcuts;
+        if self.inner.mode.get() == Mode::Idle {
+            self.inner.apply_mode_ui();
         }
     }
 
@@ -411,8 +397,17 @@ impl Inner {
     /// Chip, placeholder, find controls and dropdown for the current mode.
     fn apply_mode_ui(&self) {
         let mode = self.mode.get();
+        let idle_placeholder;
         let (chip, tip, placeholder) = match mode {
-            Mode::Idle => ("", "", "Commands Ctrl+Shift+P  ·  Find Ctrl+Shift+F"),
+            Mode::Idle => {
+                let bindings = self.shortcuts.borrow();
+                let with_hint = |label: &str, id: &str| {
+                    let hint = bindings.hint(id);
+                    if hint.is_empty() { label.to_owned() } else { format!("{label} {hint}") }
+                };
+                idle_placeholder = format!("{}  ·  {}", with_hint("Commands", "palette"), with_hint("Find", "find"));
+                ("", "", idle_placeholder.as_str())
+            }
             Mode::Find => ("/", "Find in output (type > for commands)", "Find in output"),
             Mode::Command => (">", "Command palette (type / to find in output)", "Command, pane or directory"),
         };
@@ -537,15 +532,9 @@ impl Inner {
         }
     }
 
-    fn enter(self: &Rc<Self>) {
-        match self.mode.get() {
-            Mode::Find => self.step(true),
-            Mode::Command => {
-                let selected = self.list.selected_row().map(|r| r.index() as usize).unwrap_or(0);
-                self.activate(selected);
-            }
-            Mode::Idle => {}
-        }
+    fn run_selected(self: &Rc<Self>) {
+        let selected = self.list.selected_row().map(|row| row.index() as usize).unwrap_or(0);
+        self.activate(selected);
     }
 
     /// The entry text changed: a leading `>` or `/` switches mode, otherwise update results.

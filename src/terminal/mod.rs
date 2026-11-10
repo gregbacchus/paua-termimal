@@ -561,6 +561,11 @@ impl TermView {
         *self.imp().on_exit.borrow_mut() = Some(Box::new(f));
     }
 
+    /// End the shell even if a GTK widget or a queued action still holds this view.
+    pub fn shutdown(&self) {
+        self.imp().state.borrow_mut().take();
+    }
+
     /// How inactive panes look (fade, hue/saturation/lightness) and how long the transition takes
     /// (`fade_ms`; 0 = instant).
     pub fn set_inactive_style(&self, style: InactiveStyle, fade_ms: u32) {
@@ -1037,6 +1042,9 @@ impl TermView {
     }
 
     fn child_exited(&self) {
+        if self.imp().state.borrow().is_none() {
+            return;
+        }
         if let Some(cb) = self.imp().on_exit.borrow().as_ref() {
             cb();
         } else {
@@ -1148,7 +1156,7 @@ impl TermView {
         self.paste_from(self.clipboard());
     }
 
-    fn paste_primary(&self) {
+    pub fn paste_primary(&self) {
         self.paste_from(self.display().primary_clipboard());
     }
 
@@ -1181,6 +1189,13 @@ impl TermView {
     /// Paste the clipboard (the Edit menu).
     pub fn paste_clipboard(&self) {
         self.paste();
+    }
+
+    pub fn scroll_to_bottom(&self) {
+        if let Some(state) = self.imp().state.borrow_mut().as_mut() {
+            state.scroll_to_bottom();
+        }
+        self.queue_draw();
     }
 
     /// Copy the selection to the clipboard (Ctrl+Shift+C) or to PRIMARY (on select, for
@@ -1359,33 +1374,6 @@ impl TermView {
             #[upgrade_or]
             glib::Propagation::Proceed,
             move |_, keyval, _code, state| {
-                // Classic shortcuts: Shift+Insert pastes PRIMARY, Ctrl+Insert copies.
-                if keyval == gdk::Key::Insert {
-                    if state.contains(gdk::ModifierType::SHIFT_MASK) {
-                        obj.paste_primary();
-                        return glib::Propagation::Stop;
-                    }
-                    if state.contains(gdk::ModifierType::CONTROL_MASK) {
-                        obj.copy_selection(false);
-                        return glib::Propagation::Stop;
-                    }
-                }
-                let ctrl_shift = gdk::ModifierType::CONTROL_MASK | gdk::ModifierType::SHIFT_MASK;
-                if state.contains(ctrl_shift) {
-                    match keyval.to_lower() {
-                        gdk::Key::v => {
-                            obj.paste();
-                            return glib::Propagation::Stop;
-                        }
-                        gdk::Key::c => {
-                            obj.copy_selection(false);
-                            return glib::Propagation::Stop;
-                        }
-                        // Window shortcuts (find, command palette): not for the shell.
-                        gdk::Key::f | gdk::Key::p => return glib::Propagation::Proceed,
-                        _ => {}
-                    }
-                }
                 let app_cursor = obj
                     .imp()
                     .state

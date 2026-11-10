@@ -15,11 +15,12 @@ use gtk::{gdk, gio, glib};
 
 use crate::config::{self, DirConfig, UserConfig};
 use crate::exec;
-use crate::frame::Frame;
+use crate::frame::{Frame, TabUnderline};
 use crate::header::{self, PaneHeader};
 use crate::palette::{self, PaletteItem};
 use crate::searchbox::SearchBox;
 use crate::session::{self, Kind, SessionInfo};
+use crate::shortcuts::{self, Bindings};
 use crate::statusbar::{self, StatusBar};
 use crate::themes;
 use crate::terminal::{FontWeights, Rgb, TermConfig, TermView};
@@ -46,15 +47,89 @@ struct Win {
     frame: Frame,
     /// The title-bar search box, and the pane its find currently targets.
     search: Rc<SearchBox>,
-    find_pane: RefCell<Weak<Pane>>,
+    find_pane: RefCell<Weak<TerminalTab>>,
     status: Rc<StatusBar>,
 }
 
 struct Pane {
     card: gtk::Box,
+    header_row: gtk::Box,
+    new_tab_button: gtk::Button,
+    headers: gtk::Box,
+    header_viewport: gtk::Viewport,
+    stack: gtk::Stack,
+    win: RefCell<Rc<Win>>,
+    tabs: RefCell<Vec<Rc<TerminalTab>>>,
+    /// Higher = focused more recently. The highest in a window is that window's active pane.
+    focus_seq: Cell<u64>,
+}
+
+impl Pane {
+    fn selected_tab(&self) -> Option<Rc<TerminalTab>> {
+        let child = self.stack.visible_child()?;
+        self.tabs.borrow().iter().find(|tab| tab.term.upcast_ref::<gtk::Widget>() == &child).cloned()
+    }
+
+    fn select_tab(&self, tab: &TerminalTab) {
+        self.stack.set_visible_child(&tab.term);
+        for candidate in self.tabs.borrow().iter() {
+            candidate.header.set_selected(std::ptr::eq(candidate.as_ref(), tab));
+        }
+        self.reveal_tab(tab);
+    }
+
+    fn reveal_tab(&self, tab: &TerminalTab) {
+        if !self.header_viewport.is_mapped() {
+            return;
+        }
+        // Adding, removing, or restyling a header changes its allocation. Reveal it after layout.
+        let (headers, header) = (self.headers.downgrade(), tab.header.widget().downgrade());
+        self.header_viewport.add_tick_callback(move |viewport, _| {
+            let (viewport, headers, header) = (viewport.downgrade(), headers.clone(), header.clone());
+            glib::idle_add_local_once(move || {
+                let (Some(viewport), Some(headers), Some(header)) = (viewport.upgrade(), headers.upgrade(), header.upgrade()) else { return };
+                let bounds = header.compute_bounds(&headers).filter(|_| header.has_css_class("selected"));
+                if let (Some(bounds), Some(adjustment)) = (bounds, viewport.hadjustment()) {
+                    adjustment.clamp_page(f64::from(bounds.x()), f64::from(bounds.x() + bounds.width()));
+                }
+            });
+            glib::ControlFlow::Break
+        });
+    }
+
+    fn update_tab_headers(&self) {
+        let tabs = self.tabs.borrow();
+        let tabbed = tabs.len() > 1;
+        if tabbed {
+            self.header_row.add_css_class("multiple-tabs");
+        } else {
+            self.header_row.remove_css_class("multiple-tabs");
+        }
+        for tab in tabs.iter() {
+            tab.header.set_tabbed(tabbed);
+        }
+    }
+
+    fn reorder_tab(&self, source: &gtk::Widget, target: &TerminalTab, after: bool) -> bool {
+        let mut tabs = self.tabs.borrow_mut();
+        let Some(from) = tabs.iter().position(|tab| tab.header.widget() == source) else { return false };
+        let Some(to) = tabs.iter().position(|tab| std::ptr::eq(tab.as_ref(), target)) else { return false };
+        let insert = to + usize::from(after);
+        let index = insert - usize::from(from < insert);
+        if from != index {
+            let tab = tabs.remove(from);
+            let previous = index.checked_sub(1).map(|i| tabs[i].header.widget());
+            self.headers.reorder_child_after(source, previous);
+            tabs.insert(index, tab);
+        }
+        true
+    }
+}
+
+struct TerminalTab {
     term: TermView,
     header: PaneHeader,
-    win: RefCell<Rc<Win>>,
+    pane: Weak<Pane>,
     cwd: RefCell<PathBuf>,
     host: RefCell<String>,
     title: RefCell<String>,
@@ -64,10 +139,29 @@ struct Pane {
     /// Project colour from the nearest `.vscode/settings.json` (read when the directory is
     /// entered and when the pane is focused; not watched).
     vscode_color: RefCell<Option<Rgb>>,
-    /// Higher = focused more recently. The highest in a window is that window's active pane.
-    focus_seq: Cell<u64>,
     /// Exit status of the last command (shells with OSC 133).
     last_exit: Cell<Option<i32>>,
+}
+
+impl TerminalTab {
+    fn win(&self) -> Option<Rc<Win>> {
+        self.pane.upgrade().map(|pane| pane.win.borrow().clone())
+    }
+}
+
+/// Buttons in the header handle their own actions without switching or dragging the tab.
+fn tab_header_hit(header: &gtk::Widget, x: f64, y: f64) -> bool {
+    let mut widget = header.pick(x, y, gtk::PickFlags::DEFAULT);
+    while let Some(hit) = widget {
+        if &hit == header {
+            return true;
+        }
+        if hit.is::<gtk::Button>() {
+            return false;
+        }
+        widget = hit.parent();
+    }
+    false
 }
 
 pub struct App {
@@ -75,9 +169,10 @@ pub struct App {
     wins: RefCell<Vec<Rc<Win>>>,
     next_win_id: Cell<u32>,
     cfg: RefCell<UserConfig>,
+    shortcuts: RefCell<Rc<Bindings>>,
     panes: RefCell<Vec<Rc<Pane>>>,
-    /// The most recently focused pane in any window (drives `.paua.yaml` file watching).
-    active: RefCell<Weak<Pane>>,
+    /// The most recently focused terminal in any window (drives `.paua.yaml` file watching).
+    active: RefCell<Weak<TerminalTab>>,
     focus_counter: Cell<u64>,
     /// Recently visited directories, newest first (for the palette).
     recent_dirs: RefCell<Vec<PathBuf>>,
@@ -134,13 +229,13 @@ fn monitor_size() -> (i32, i32) {
         .unwrap_or((1920, 1080))
 }
 
-/// `(label, window action)` sections of the title-bar menus. Every `win.*` action here is wired
-/// to `App::run_action` in `create_window` (except `find` and `command`, which open the search box).
+/// `(label, window action)` sections of the title-bar menus.
 const MENUS: &[(&str, &[&[(&str, &str)]])] = &[
     (
         "_File",
         &[
             &[("_New Window", "win.new-window")],
+            &[("New _Tab", "win.new-tab"), ("Close Ta_b", "win.close-tab"), ("Previous Tab", "win.previous-tab"), ("Next Tab", "win.next-tab")],
             &[("Split _Right", "win.split-right"), ("Split _Down", "win.split-down")],
             &[("Open Pane in New _Window", "win.pop-out"), ("_Close Pane", "win.close-pane")],
             &[("Open Config _File", "win.open-config"), ("_Reload Config", "win.reload-config")],
@@ -152,11 +247,11 @@ const MENUS: &[(&str, &[&[(&str, &str)]])] = &[
         &[
             &[("_Copy", "win.copy"), ("_Paste", "win.paste")],
             &[("Copy Working _Directory", "win.copy-path"), ("C_lear Terminal", "win.clear")],
-            &[("_Find in Output", "win.find"), ("Command _Palette", "win.command")],
+            &[("_Find in Output", "win.find"), ("Command _Palette", "win.palette")],
         ],
     ),
     ("_View", &[&[("Cycle _Colour Scheme", "win.cycle-scheme")]]),
-    ("_Help", &[&[("_About Paua", "win.about")]]),
+    ("_Help", &[&[("_Keyboard Shortcuts", "win.keyboard-shortcuts")], &[("_About Paua", "win.about")]]),
 ];
 
 fn build_menu() -> gio::Menu {
@@ -189,7 +284,19 @@ impl App {
             Ok(c) => (c, None),
             Err(e) => (UserConfig::default(), Some(e)),
         };
+        Self::build_with_config(gtk_app, cfg, load_error);
+    }
 
+    fn build_with_config(gtk_app: &adw::Application, cfg: UserConfig, load_error: Option<String>) -> Rc<Self> {
+        let (cfg, shortcuts, load_error) = match Bindings::resolve(&cfg.shortcuts) {
+            Ok(bindings) => (cfg, bindings, load_error),
+            Err(error) => {
+                let cfg = UserConfig::default();
+                let bindings = Bindings::resolve(&cfg.shortcuts).expect("valid default shortcuts");
+                (cfg, bindings, Some(error))
+            }
+        };
+        shortcuts.install(gtk_app, None);
         let header_css = gtk::CssProvider::new();
         gtk::style_context_add_provider_for_display(
             &gdk::Display::default().expect("no display"),
@@ -203,6 +310,7 @@ impl App {
             wins: RefCell::default(),
             next_win_id: Cell::new(0),
             cfg: RefCell::new(cfg),
+            shortcuts: RefCell::new(Rc::new(shortcuts)),
             panes: RefCell::default(),
             active: RefCell::default(),
             focus_counter: Cell::new(0),
@@ -229,7 +337,7 @@ impl App {
                     let (bar, btn) = scroll_styles(&app.cfg.borrow());
                     let find = app.cfg.borrow().search.style(sm.is_dark());
                     let urls = app.cfg.borrow().terminal.urls.style(sm.is_dark());
-                    for p in app.panes.borrow().iter() {
+                    for p in app.all_tabs() {
                         p.term.set_theme(&theme);
                         p.term.set_scroll_style(bar, btn);
                         p.term.set_find_style(find);
@@ -242,10 +350,10 @@ impl App {
 
         // The first window starts with a single pane.
         let win = app.create_window(maximized);
-        let first_pane = app.new_pane(&win, None);
+        let (first_pane, first_tab) = app.new_pane(&win, None);
         win.root.append(&first_pane.card);
         first_pane.focus_seq.set(app.next_focus_seq());
-        *app.active.borrow_mut() = Rc::downgrade(&first_pane);
+        *app.active.borrow_mut() = Rc::downgrade(&first_tab);
 
         app.update_pane_ui();
         app.refresh_frames();
@@ -260,7 +368,8 @@ impl App {
         }
 
         win.window.present();
-        first_pane.term.grab_focus();
+        first_tab.term.grab_focus();
+        app
     }
 
     fn all_wins(&self) -> Vec<Rc<Win>> {
@@ -295,7 +404,7 @@ impl App {
                 .build(),
         );
         header.pack_start(&gtk::PopoverMenuBar::from_model(Some(&build_menu())));
-        let search = Rc::new(SearchBox::new());
+        let search = Rc::new(SearchBox::new(self.shortcuts.borrow().clone()));
         {
             let cfg = self.cfg.borrow();
             search.set_defaults(cfg.search.case, cfg.search.regex);
@@ -394,49 +503,26 @@ impl App {
                     app.end_find(&win);
                 }
             });
-            // Ctrl+Shift+F / Ctrl+Shift+P (the `win.find` and `win.command` actions).
-            let (w1, w2) = (Rc::downgrade(&win), Rc::downgrade(&win));
-            window.add_action_entries([
-                gio::ActionEntry::builder("find")
-                    .activate(move |_, _, _| {
-                        if let Some(win) = w1.upgrade() {
-                            win.search.open_find();
-                        }
-                    })
-                    .build(),
-                gio::ActionEntry::builder("command")
-                    .activate(move |_, _, _| {
-                        if let Some(win) = w2.upgrade() {
-                            win.search.open_command();
-                        }
-                    })
-                    .build(),
-            ]);
-            // The other menu entries: `win.new-window` runs `run_action("new_window")`, and so on.
-            for (action, name) in [
-                ("new-window", "new_window"),
-                ("split-right", "split_right"),
-                ("split-down", "split_down"),
-                ("pop-out", "pop_out"),
-                ("close-pane", "close_pane"),
-                ("copy", "copy"),
-                ("paste", "paste"),
-                ("copy-path", "copy_path"),
-                ("clear", "clear"),
-                ("cycle-scheme", "cycle_scheme"),
-                ("open-config", "open_config"),
-                ("reload-config", "reload_config"),
-                ("about", "about"),
-            ] {
+            for action in shortcuts::window_actions() {
                 let (app, w) = (Rc::downgrade(self), Rc::downgrade(&win));
-                window.add_action_entries([gio::ActionEntry::builder(action)
+                window.add_action_entries([gio::ActionEntry::builder(&action.gio_name())
                     .activate(move |_, _, _| {
                         if let (Some(app), Some(win)) = (app.upgrade(), w.upgrade()) {
-                            app.run_action(&win, name);
+                            app.run_action(&win, action.id);
                         }
                     })
                     .build()]);
             }
+            let (app, w) = (Rc::downgrade(self), Rc::downgrade(&win));
+            window.add_action_entries([gio::ActionEntry::builder("run-command")
+                .parameter_type(Some(glib::VariantTy::STRING))
+                .activate(move |_, _, target| {
+                    let (Some(app), Some(win), Some(target)) = (app.upgrade(), w.upgrade(), target.and_then(glib::Variant::str)) else { return };
+                    if shortcuts::is_command(target) {
+                        app.run_action(&win, target);
+                    }
+                })
+                .build()]);
         }
 
         // Buttons act on the window they are in.
@@ -465,7 +551,13 @@ impl App {
             let (app, win) = (Rc::downgrade(self), Rc::downgrade(&win));
             window.connect_close_request(move |_| {
                 if let (Some(app), Some(win)) = (app.upgrade(), win.upgrade()) {
+                    let panes = app.panes_in(&win);
                     app.panes.borrow_mut().retain(|p| !Rc::ptr_eq(&p.win.borrow(), &win));
+                    for pane in panes {
+                        for tab in pane.tabs.borrow_mut().drain(..) {
+                            tab.term.shutdown();
+                        }
+                    }
                     app.wins.borrow_mut().retain(|w| !Rc::ptr_eq(w, &win));
                     if app.wins.borrow().is_empty() {
                         app.gtk_app.quit();
@@ -520,9 +612,8 @@ impl App {
         }
     }
 
-    /// A rounded card holding a header line and one terminal, started in `cwd` (or the process
-    /// cwd). The caller puts `card` into a window's tree.
-    fn new_pane(self: &Rc<Self>, win: &Rc<Win>, cwd: Option<PathBuf>) -> Rc<Pane> {
+    /// A rounded card with one row of headers above the terminal stack. The caller attaches it.
+    fn new_pane(self: &Rc<Self>, win: &Rc<Win>, cwd: Option<PathBuf>) -> (Rc<Pane>, Rc<TerminalTab>) {
         let card = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .css_classes(["pane"])
@@ -530,6 +621,85 @@ impl App {
             .hexpand(true)
             .vexpand(true)
             .build();
+        let headers = gtk::Box::builder()
+            .accessible_role(gtk::AccessibleRole::TabList)
+            .homogeneous(true)
+            .spacing(1)
+            .build();
+        let header_viewport = gtk::Viewport::builder().child(&headers).scroll_to_focus(true).build();
+        let header_scroll = gtk::ScrolledWindow::builder()
+            .child(&header_viewport)
+            // Let the row scroll without a scrollbar over the header buttons.
+            .hscrollbar_policy(gtk::PolicyType::External)
+            .vscrollbar_policy(gtk::PolicyType::Never)
+            .propagate_natural_height(true)
+            .hexpand(true)
+            .build();
+        let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+        let adjustment = header_scroll.hadjustment();
+        wheel.connect_scroll(move |wheel, _, dy| {
+            if dy == 0.0 || wheel.unit() != gdk::ScrollUnit::Wheel || adjustment.upper() <= adjustment.page_size() {
+                return glib::Propagation::Proceed;
+            }
+            adjustment.set_value(adjustment.value() + dy * 52.0);
+            glib::Propagation::Stop
+        });
+        wheel.set_propagation_phase(gtk::PropagationPhase::Capture);
+        header_scroll.add_controller(wheel);
+        let add = PaneHeader::button(&self.cfg.borrow().panes.tabs.new_tab_icon, "New tab");
+        self.update_new_tab_tooltip(&add);
+        add.add_css_class("pane-new-tab");
+        let header_row = gtk::Box::builder().css_classes(["pane-header-row"]).build();
+        header_row.append(&header_scroll);
+        header_row.append(&add);
+        let stack = gtk::Stack::builder()
+            .hexpand(true)
+            .vexpand(true)
+            .build();
+        card.append(&header_row);
+        card.append(&stack);
+        let pane = Rc::new(Pane {
+            card,
+            header_row,
+            new_tab_button: add.clone(),
+            headers,
+            header_viewport,
+            stack,
+            win: RefCell::new(win.clone()),
+            tabs: RefCell::default(),
+            focus_seq: Cell::new(0),
+        });
+        self.panes.borrow_mut().push(pane.clone());
+        let tab = self.new_tab(&pane, cwd);
+
+        let (app, group) = (Rc::downgrade(self), Rc::downgrade(&pane));
+        add.connect_clicked(move |_| {
+            if let (Some(app), Some(group)) = (app.upgrade(), group.upgrade()) {
+                if let Some(tab) = group.selected_tab() {
+                    app.add_tab(&tab);
+                }
+            }
+        });
+        let (app, group) = (Rc::downgrade(self), Rc::downgrade(&pane));
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_enter(move |_| {
+            if let (Some(app), Some(group)) = (app.upgrade(), group.upgrade()) {
+                if let Some(tab) = group.selected_tab() {
+                    app.set_active(&tab);
+                }
+            }
+        });
+        pane.card.add_controller(focus);
+        (pane, tab)
+    }
+
+    fn update_new_tab_tooltip(&self, button: &gtk::Button) {
+        let hint = self.shortcuts.borrow().hint("new_tab");
+        let tooltip = if hint.is_empty() { "New tab".into() } else { format!("New tab ({hint})") };
+        button.set_tooltip_text(Some(&tooltip));
+    }
+
+    fn new_tab(self: &Rc<Self>, group: &Rc<Pane>, cwd: Option<PathBuf>) -> Rc<TerminalTab> {
         let header = PaneHeader::new();
 
         let cwd = cwd
@@ -555,18 +725,16 @@ impl App {
             header.apply_style(&cfg.panes.header, &cfg.font.family);
         }
 
-        let pane = Rc::new(Pane {
-            card: card.clone(),
+        let pane = Rc::new(TerminalTab {
             term: term.clone(),
             header,
-            win: RefCell::new(win.clone()),
+            pane: Rc::downgrade(group),
             cwd: RefCell::new(cwd),
             host: RefCell::new(glib::host_name().to_string()),
             title: RefCell::default(),
             session: RefCell::default(),
             dir: RefCell::new(None),
             vscode_color: RefCell::new(None),
-            focus_seq: Cell::new(0),
             last_exit: Cell::new(None),
         });
         self.resolve_dir(&pane);
@@ -598,6 +766,9 @@ impl App {
                 if let (Some(app), Some(pane)) = (app.upgrade(), pane.upgrade()) {
                     if app.cfg.borrow().panes.header.bell.enabled {
                         pane.header.flash_bell();
+                        if !pane.header.widget().has_css_class("selected") {
+                            pane.header.widget().add_css_class("needs-attention");
+                        }
                     }
                 }
             }
@@ -623,8 +794,7 @@ impl App {
             move |exit| {
                 if let (Some(app), Some(pane)) = (app.upgrade(), pane.upgrade()) {
                     pane.last_exit.set(exit);
-                    if app.is_win_active(&pane) {
-                        let win = pane.win.borrow().clone();
+                    if let Some(win) = pane.win().filter(|_| app.is_win_active(&pane)) {
                         app.refresh_status(&win);
                         win.status.on_prompt();
                     }
@@ -652,7 +822,7 @@ impl App {
             let (app, pane) = (app.clone(), weak_pane.clone());
             move || {
                 if let (Some(app), Some(pane)) = (app.upgrade(), pane.upgrade()) {
-                    app.close_pane(&pane);
+                    app.close_tab(&pane);
                 }
             }
         });
@@ -666,7 +836,7 @@ impl App {
         });
 
         // Header buttons.
-        let on_click = |button: &gtk::Button, f: fn(&Rc<App>, &Rc<Pane>)| {
+        let on_click = |button: &gtk::Button, f: fn(&Rc<App>, &Rc<TerminalTab>)| {
             let (app, pane) = (app.clone(), weak_pane.clone());
             button.connect_clicked(move |_| {
                 if let (Some(app), Some(pane)) = (app.upgrade(), pane.upgrade()) {
@@ -676,12 +846,79 @@ impl App {
         };
         on_click(&pane.header.copy, App::copy_path);
         on_click(&pane.header.pop_out, App::pop_out);
-        on_click(&pane.header.close, App::close_pane);
+        on_click(&pane.header.close, App::close_tab);
+        self.connect_tab_header(&pane);
 
-        self.panes.borrow_mut().push(pane.clone());
-        card.append(pane.header.widget());
-        card.append(&term);
+        group.tabs.borrow_mut().push(pane.clone());
+        group.headers.append(pane.header.widget());
+        group.stack.add_child(&term);
+        group.update_tab_headers();
+        group.select_tab(&pane);
         pane
+    }
+
+    fn connect_tab_header(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let header = tab.header.widget();
+        let (app, target) = (Rc::downgrade(self), Rc::downgrade(tab));
+        let click = gtk::GestureClick::builder().button(gdk::BUTTON_PRIMARY).build();
+        click.connect_released({
+            let (app, target) = (app.clone(), target.clone());
+            move |_, _, x, y| {
+                if let (Some(app), Some(tab)) = (app.upgrade(), target.upgrade()) {
+                    if tab_header_hit(tab.header.widget(), x, y) {
+                        app.activate_tab(&tab);
+                    }
+                }
+            }
+        });
+        header.add_controller(click);
+
+        let keys = gtk::EventControllerKey::new();
+        keys.connect_key_pressed({
+            let (app, target) = (app.clone(), target.clone());
+            move |controller, key, _, _| {
+                if controller.widget().is_some_and(|w| w.has_focus())
+                    && matches!(key, gdk::Key::Return | gdk::Key::KP_Enter | gdk::Key::space)
+                {
+                    if let (Some(app), Some(tab)) = (app.upgrade(), target.upgrade()) {
+                        app.activate_tab(&tab);
+                        return glib::Propagation::Stop;
+                    }
+                }
+                glib::Propagation::Proceed
+            }
+        });
+        header.add_controller(keys);
+
+        let drag = gtk::DragSource::builder().actions(gdk::DragAction::MOVE).build();
+        drag.connect_prepare({
+            let target = target.clone();
+            move |_, x, y| {
+                let tab = target.upgrade()?;
+                let pane = tab.pane.upgrade()?;
+                let header = tab.header.widget();
+                (pane.tabs.borrow().len() > 1 && tab_header_hit(header, x, y))
+                    .then(|| gdk::ContentProvider::for_value(&header.to_value()))
+            }
+        });
+        header.add_controller(drag);
+
+        let drop = gtk::DropTarget::new(gtk::Widget::static_type(), gdk::DragAction::MOVE);
+        drop.connect_drop(move |_, value, x, _| {
+            let (Ok(source), Some(tab)) = (value.get::<gtk::Widget>(), target.upgrade()) else { return false };
+            let Some(pane) = tab.pane.upgrade() else { return false };
+            let after = x >= f64::from(tab.header.widget().width()) / 2.0;
+            pane.reorder_tab(&source, &tab, after)
+        });
+        header.add_controller(drop);
+    }
+
+    fn add_tab(self: &Rc<Self>, current: &Rc<TerminalTab>) {
+        let Some(pane) = current.pane.upgrade() else { return };
+        let cwd = current.cwd.borrow().clone();
+        let tab = self.new_tab(&pane, Some(cwd));
+        self.set_active(&tab);
+        Self::focus_later(&tab.term);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -693,7 +930,7 @@ impl App {
         *win.find_pane.borrow_mut() = self.win_active(win).map_or_else(Weak::new, |p| Rc::downgrade(&p));
     }
 
-    fn find_target(win: &Rc<Win>) -> Option<Rc<Pane>> {
+    fn find_target(win: &Rc<Win>) -> Option<Rc<TerminalTab>> {
         win.find_pane.borrow().upgrade()
     }
 
@@ -725,17 +962,17 @@ impl App {
 
     /// A pane's find status changed (results, stepping, output arriving): show it if this pane is
     /// what its window's box is searching.
-    fn on_find_status(&self, pane: &Rc<Pane>, status: &crate::terminal::FindStatus) {
-        let win = pane.win.borrow().clone();
+    fn on_find_status(&self, pane: &Rc<TerminalTab>, status: &crate::terminal::FindStatus) {
+        let Some(win) = pane.win() else { return };
         if Self::find_target(&win).is_some_and(|t| Rc::ptr_eq(&t, pane)) {
             win.search.set_status(status);
         }
     }
 
     /// The user focused another pane while a find is open: move the find there.
-    fn retarget_find(&self, pane: &Rc<Pane>) {
-        let win = pane.win.borrow().clone();
-        if !win.search.is_open() || Self::find_target(&win).is_some_and(|t| Rc::ptr_eq(&t, pane)) {
+    fn retarget_find(&self, pane: &Rc<TerminalTab>) {
+        let Some(win) = pane.win() else { return };
+        if !win.search.is_find_open() || Self::find_target(&win).is_some_and(|t| Rc::ptr_eq(&t, pane)) {
             return;
         }
         if let Some(old) = Self::find_target(&win) {
@@ -755,23 +992,31 @@ impl App {
         palette::push_recent(&mut self.recent_dirs.borrow_mut(), dir.to_path_buf(), cap.max(1));
     }
 
-    /// Bring a pane (and its window) to the front and focus it.
-    fn goto_pane(&self, pane: &Rc<Pane>) {
-        pane.win.borrow().window.present();
-        Self::focus_later(&pane.term);
+    /// Bring a terminal tab (and its window) to the front and focus it.
+    fn goto_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let Some(win) = tab.win() else { return };
+        win.window.present();
+        self.activate_tab(tab);
+    }
+
+    fn activate_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let Some(pane) = tab.pane.upgrade() else { return };
+        pane.select_tab(tab);
+        self.set_active(tab);
+        Self::focus_later(&tab.term);
     }
 
     /// A new window with one pane, started in `cwd`.
     fn new_window_at(self: &Rc<Self>, cwd: PathBuf) {
         let win = self.create_window(false);
-        let pane = self.new_pane(&win, Some(cwd));
+        let (pane, tab) = self.new_pane(&win, Some(cwd));
         win.root.append(&pane.card);
         pane.focus_seq.set(self.next_focus_seq());
-        *self.active.borrow_mut() = Rc::downgrade(&pane);
+        *self.active.borrow_mut() = Rc::downgrade(&tab);
         self.update_pane_ui();
         self.refresh_frames();
         win.window.present();
-        Self::focus_later(&pane.term);
+        Self::focus_later(&tab.term);
     }
 
     /// Open the config file in the default editor, creating a commented stub if there is none.
@@ -799,45 +1044,16 @@ impl App {
         let (app, w) = (Rc::downgrade(self), Rc::downgrade(win));
         let mut items: Vec<PaletteItem> = Vec::new();
 
-        // App-level commands.
-        let mut command = |title: &str, hint: &str, f: fn(&Rc<App>, &Rc<Win>)| {
+        let bindings = self.shortcuts.borrow();
+        for action in shortcuts::window_actions().filter(|action| action.id != "palette") {
             let (app, w) = (app.clone(), w.clone());
-            items.push(PaletteItem::new("Command", title, hint, move || {
-                if let (Some(a), Some(w)) = (app.upgrade(), w.upgrade()) {
-                    f(&a, &w);
+            let hint = bindings.hint(action.id);
+            items.push(PaletteItem::new("Command", action.title, hint, move || {
+                if let (Some(app), Some(win)) = (app.upgrade(), w.upgrade()) {
+                    app.run_action(&win, action.id);
                 }
             }));
-        };
-        command("Find in output", "Ctrl+Shift+F", |_, w| w.search.open_find());
-        command("Split right", "new pane to the right", |a, w| a.split(w, gtk::Orientation::Horizontal));
-        command("Split down", "new pane below", |a, w| a.split(w, gtk::Orientation::Vertical));
-        command("Open pane in new window", "move the focused pane", |a, w| {
-            if let Some(p) = a.win_active(w) {
-                a.pop_out(&p);
-            }
-        });
-        command("Close pane", "ends its shell", |a, w| {
-            if let Some(p) = a.win_active(w) {
-                a.close_pane(&p);
-            }
-        });
-        command("Clear terminal", "screen and scrollback of this pane", |a, w| {
-            if let Some(p) = a.win_active(w) {
-                p.term.clear();
-            }
-        });
-        command("Copy working directory", "to the clipboard", |a, w| {
-            if let Some(p) = a.win_active(w) {
-                a.copy_path(&p);
-            }
-        });
-        command("New window", "in the current directory", |a, w| {
-            let cwd = a.win_active(w).map(|p| p.cwd.borrow().clone()).unwrap_or_default();
-            a.new_window_at(cwd);
-        });
-        command("Cycle colour scheme", "system / light / dark", |a, _| a.cycle_scheme());
-        command("Reload config", "re-read config.yaml", |a, _| a.reload_user());
-        command("Open config file", "in your default editor", |a, _| a.open_config_file());
+        }
 
         // Your own commands: typed into the focused pane.
         if let Some(pane) = &active {
@@ -848,17 +1064,17 @@ impl App {
             }
         }
 
-        // Other panes, in any window.
-        for p in self.panes.borrow().iter() {
-            if active.as_ref().is_some_and(|a| Rc::ptr_eq(a, p)) {
+        // Other tabs, including those in other panes and windows.
+        for p in self.all_tabs() {
+            if active.as_ref().is_some_and(|a| Rc::ptr_eq(a, &p)) {
                 continue;
             }
             let text = p.header.full_text();
             let title = if text.trim().is_empty() { p.cwd.borrow().display().to_string() } else { text };
-            let (app, pane) = (app.clone(), p.clone());
-            items.push(PaletteItem::new("Pane", format!("Go to {title}"), "", move || {
-                if let Some(a) = app.upgrade() {
-                    a.goto_pane(&pane);
+            let (app, tab) = (app.clone(), Rc::downgrade(&p));
+            items.push(PaletteItem::new("Tab", format!("Go to {title}"), "", move || {
+                if let (Some(a), Some(tab)) = (app.upgrade(), tab.upgrade()) {
+                    a.goto_tab(&tab);
                 }
             }));
         }
@@ -985,15 +1201,39 @@ impl App {
                 let cwd = pane.map(|p| p.cwd.borrow().clone()).unwrap_or_default();
                 self.new_window_at(cwd);
             }
+            "new_tab" => {
+                if let Some(tab) = pane { self.add_tab(&tab); }
+            }
+            "close_tab" => {
+                if let Some(tab) = pane { self.close_tab(&tab); }
+            }
+            "previous_tab" | "next_tab" => {
+                let Some(tab) = pane else { return };
+                let Some(group) = tab.pane.upgrade() else { return };
+                let next = {
+                    let tabs = group.tabs.borrow();
+                    let Some(current) = tabs.iter().position(|candidate| Rc::ptr_eq(candidate, &tab)) else { return };
+                    let direction = if action == "next_tab" { 1 } else { tabs.len() - 1 };
+                    tabs[(current + direction) % tabs.len()].clone()
+                };
+                if !Rc::ptr_eq(&tab, &next) {
+                    self.activate_tab(&next);
+                }
+            }
             "cycle_scheme" => self.cycle_scheme(),
             "about" => Self::show_about(win),
+            "keyboard_shortcuts" => self.shortcuts.borrow().show_dialog(&win.window),
+            "git_sync" | "git_fetch" | "git_pull" | "git_push" => win.status.git_action(action),
             "reload_config" => self.reload_user(),
             "open_config" => self.open_config_file(),
-            "clear" | "close_pane" | "pop_out" | "copy_path" | "copy" | "paste" if pane.is_none() => {}
+            "copy" | "paste" | "paste_primary" if Self::edit_clipboard(win, action) => {}
+            "clear" | "scroll_to_bottom" | "close_pane" | "pop_out" | "copy_path" | "copy" | "paste" | "paste_primary" if pane.is_none() => {}
             "copy" => pane.unwrap().term.copy(),
+            "paste_primary" => pane.unwrap().term.paste_primary(),
             "paste" => pane.unwrap().term.paste_clipboard(),
             "clear" => pane.unwrap().term.clear(),
-            "close_pane" => self.close_pane(&pane.unwrap()),
+            "scroll_to_bottom" => pane.unwrap().term.scroll_to_bottom(),
+            "close_pane" => self.request_close_pane(&pane.unwrap()),
             "pop_out" => self.pop_out(&pane.unwrap()),
             "copy_path" => self.copy_path(&pane.unwrap()),
             a if a.starts_with("type:") => {
@@ -1024,12 +1264,24 @@ impl App {
         }
     }
 
+    /// Keep GTK's text-field clipboard keys working when Find or another entry has focus.
+    fn edit_clipboard(win: &Win, action: &str) -> bool {
+        let name = if action == "copy" { "clipboard.copy" } else { "clipboard.paste" };
+        GtkWindowExt::focus(&win.window).filter(|widget| widget.is::<gtk::Editable>())
+            .is_some_and(|widget| widget.activate_action(name, None).is_ok())
+    }
+
     /// Copy the pane's real working directory (not the shortened display form).
-    fn copy_path(self: &Rc<Self>, pane: &Rc<Pane>) {
+    fn copy_path(self: &Rc<Self>, pane: &Rc<TerminalTab>) {
         let path = pane.cwd.borrow().display().to_string();
         pane.term.clipboard().set_text(&path);
-        let win = pane.win.borrow().clone();
-        self.toast_in(&win, "Path copied");
+        if let Some(win) = pane.win() {
+            self.toast_in(&win, "Path copied");
+        }
+    }
+
+    fn all_tabs(&self) -> Vec<Rc<TerminalTab>> {
+        self.panes.borrow().iter().flat_map(|pane| pane.tabs.borrow().clone()).collect()
     }
 
     fn panes_in(&self, win: &Rc<Win>) -> Vec<Rc<Pane>> {
@@ -1041,14 +1293,13 @@ impl App {
             .collect()
     }
 
-    /// The most recently focused pane in `win`.
-    fn win_active(&self, win: &Rc<Win>) -> Option<Rc<Pane>> {
-        self.panes_in(win).into_iter().max_by_key(|p| p.focus_seq.get())
+    /// The selected terminal of the most recently focused pane in `win`.
+    fn win_active(&self, win: &Rc<Win>) -> Option<Rc<TerminalTab>> {
+        self.panes_in(win).into_iter().max_by_key(|p| p.focus_seq.get())?.selected_tab()
     }
 
-    fn is_win_active(&self, pane: &Rc<Pane>) -> bool {
-        let win = pane.win.borrow().clone();
-        self.win_active(&win).is_some_and(|a| Rc::ptr_eq(&a, pane))
+    fn is_win_active(&self, pane: &Rc<TerminalTab>) -> bool {
+        pane.win().and_then(|win| self.win_active(&win)).is_some_and(|a| Rc::ptr_eq(&a, pane))
     }
 
     fn new_paned(orientation: gtk::Orientation) -> gtk::Paned {
@@ -1081,11 +1332,12 @@ impl App {
     /// Split `win`'s active pane, putting a new terminal (same directory) to its right or below.
     fn split(self: &Rc<Self>, win: &Rc<Win>, orientation: gtk::Orientation) {
         let Some(target) = self.win_active(win) else { return };
-        let card = target.card.clone();
+        let Some(pane) = target.pane.upgrade() else { return };
+        let card = pane.card.clone();
         let Some(parent) = card.parent() else { return };
 
         let (w, h) = (card.width(), card.height());
-        let new_pane = self.new_pane(win, Some(target.cwd.borrow().clone()));
+        let (new_pane, new_tab) = self.new_pane(win, Some(target.cwd.borrow().clone()));
         let paned = Self::new_paned(orientation);
         paned.set_position(if orientation == gtk::Orientation::Horizontal { w / 2 } else { h / 2 });
 
@@ -1097,8 +1349,8 @@ impl App {
         paned.set_end_child(Some(&new_pane.card));
         Self::replace_child(&parent, placeholder.upcast_ref(), paned.upcast_ref());
 
-        self.update_pane_ui();
-        Self::focus_later(&new_pane.term);
+        self.set_active(&new_tab);
+        Self::focus_later(&new_tab.term);
     }
 
     /// Take a pane's card out of its window's split tree; its sibling takes the freed space.
@@ -1117,7 +1369,9 @@ impl App {
         // The pane usually holds focus; drop it first so GTK doesn't warn about a focus child
         // disappearing from the Paned.
         let win = pane.win.borrow().clone();
-        GtkWindowExt::set_focus(&win.window, None::<&gtk::Widget>);
+        if GtkWindowExt::focus(&win.window).is_some_and(|focus| focus.is_ancestor(paned)) {
+            GtkWindowExt::set_focus(&win.window, None::<&gtk::Widget>);
+        }
         paned.set_start_child(None::<&gtk::Widget>);
         paned.set_end_child(None::<&gtk::Widget>);
         Self::replace_child(&grandparent, paned.upcast_ref(), &sibling);
@@ -1125,56 +1379,138 @@ impl App {
     }
 
     fn focus_later(term: &TermView) {
-        let term = term.clone();
+        let term = term.downgrade();
         glib::idle_add_local_once(move || {
-            term.grab_focus();
+            if let Some(term) = term.upgrade().filter(|term| term.is_mapped()) {
+                term.grab_focus();
+            }
         });
     }
 
-    /// Close a pane (its shell exited, or the user clicked close). A sibling takes over the freed
-    /// space; closing a window's last pane closes that window (and the app, if it was the last).
-    fn close_pane(self: &Rc<Self>, pane: &Rc<Pane>) {
-        let win = pane.win.borrow().clone();
-        if self.detach_card(pane) {
-            self.panes.borrow_mut().retain(|p| !Rc::ptr_eq(p, pane));
-            if let Some(next) = self.win_active(&win) {
+    fn close_tab(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let Some(pane) = tab.pane.upgrade() else { return };
+        let Some(index) = pane.tabs.borrow().iter().position(|candidate| Rc::ptr_eq(candidate, tab)) else { return };
+        let was_active = self.is_win_active(tab);
+        let was_global = self.is_active_anywhere(tab);
+        let selected = pane.selected_tab().is_some_and(|current| Rc::ptr_eq(&current, tab));
+        if pane.tabs.borrow().len() == 1 {
+            self.close_pane(&pane);
+            return;
+        }
+        let next = {
+            let mut tabs = pane.tabs.borrow_mut();
+            tabs.remove(index);
+            selected.then(|| tabs[index.min(tabs.len() - 1)].clone())
+        };
+        pane.headers.remove(tab.header.widget());
+        pane.update_tab_headers();
+        if let Some(next) = &next {
+            pane.select_tab(next);
+        }
+        pane.stack.remove(&tab.term);
+        tab.term.shutdown();
+        if let Some(next) = next.filter(|_| was_active) {
+            if was_global {
+                self.set_active(&next);
                 Self::focus_later(&next.term);
+            } else if let Some(win) = next.win() {
+                self.retarget_find(&next);
+                self.refresh_window_title(&win);
+                self.refresh_status(&win);
+                self.refresh_frames();
+            }
+        }
+    }
+
+    fn request_close_pane(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let Some(pane) = tab.pane.upgrade() else { return };
+        let count = pane.tabs.borrow().len();
+        if count <= 1 {
+            self.close_pane(&pane);
+            return;
+        }
+        let dialog = adw::AlertDialog::builder()
+            .heading("Close pane?")
+            .body(format!("This ends all {count} terminal sessions in the pane."))
+            .build();
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("close", "Close Pane");
+        dialog.set_response_appearance("close", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let (app, weak) = (Rc::downgrade(self), Rc::downgrade(&pane));
+        dialog.connect_response(Some("close"), move |_, _| {
+            if let (Some(app), Some(pane)) = (app.upgrade(), weak.upgrade()) {
+                app.close_pane(&pane);
+            }
+        });
+        dialog.present(Some(&pane.win.borrow().window));
+    }
+
+    /// Close the whole group. A sibling takes over the freed space, or the last pane closes its window.
+    fn close_pane(self: &Rc<Self>, pane: &Rc<Pane>) {
+        if pane.tabs.borrow().is_empty() {
+            return;
+        }
+        let win = pane.win.borrow().clone();
+        let was_global = pane.selected_tab().is_some_and(|tab| self.is_active_anywhere(&tab));
+        let detached = self.detach_card(pane);
+        self.panes.borrow_mut().retain(|p| !Rc::ptr_eq(p, pane));
+        for tab in pane.tabs.borrow_mut().drain(..) {
+            tab.term.shutdown();
+        }
+        if detached {
+            if let Some(next) = self.win_active(&win) {
+                if was_global {
+                    self.set_active(&next);
+                } else {
+                    self.retarget_find(&next);
+                }
+                if GtkWindowExt::focus(&win.window).is_none() {
+                    Self::focus_later(&next.term);
+                }
             }
             self.update_pane_ui();
             self.refresh_frames();
             self.watch_dir();
             return;
         }
-
-        // The window's only pane: close the window (its close handler tidies up the rest).
-        self.panes.borrow_mut().retain(|p| !Rc::ptr_eq(p, pane));
         win.window.close();
     }
 
-    /// Move a pane, with its running shell, into a new full window. Offered only while its current
+    /// Move a pane and its running tabs into a new full window. Offered only while its current
     /// window would keep at least one other pane.
-    fn pop_out(self: &Rc<Self>, pane: &Rc<Pane>) {
+    fn pop_out(self: &Rc<Self>, tab: &Rc<TerminalTab>) {
+        let Some(pane) = tab.pane.upgrade() else { return };
         let from = pane.win.borrow().clone();
-        if self.panes_in(&from).len() < 2 || !self.detach_card(pane) {
+        if self.panes_in(&from).len() < 2 || !self.detach_card(&pane) {
             return;
         }
 
         let win = self.create_window(false);
+        if Self::find_target(&from).is_some_and(|t| t.pane.upgrade().is_some_and(|p| Rc::ptr_eq(&p, &pane))) {
+            if let Some(old) = from.find_pane.replace(Weak::new()).upgrade() {
+                old.term.find_clear();
+            }
+        }
         *pane.win.borrow_mut() = win.clone();
         win.root.append(&pane.card);
+        pane.select_tab(tab);
 
         pane.focus_seq.set(self.next_focus_seq());
-        *self.active.borrow_mut() = Rc::downgrade(pane);
+        *self.active.borrow_mut() = Rc::downgrade(tab);
         if let Some(next) = self.win_active(&from) {
+            self.retarget_find(&next);
             Self::focus_later(&next.term);
         }
 
-        self.refresh_header(pane);
+        self.refresh_header(tab);
         self.update_pane_ui();
         self.refresh_frames();
         self.watch_dir();
         win.window.present();
-        Self::focus_later(&pane.term);
+        pane.reveal_tab(tab);
+        Self::focus_later(&tab.term);
     }
 
     /// Per window: dim every pane except that window's active one (only when it has several),
@@ -1183,17 +1519,19 @@ impl App {
         for win in self.all_wins() {
             self.refresh_status(&win);
             let panes = self.panes_in(&win);
-            let active = self.win_active(&win);
+            let active = self.win_active(&win).and_then(|tab| tab.pane.upgrade());
             let multiple = panes.len() > 1;
             for p in &panes {
                 let inactive = multiple && !active.as_ref().is_some_and(|a| Rc::ptr_eq(a, p));
-                p.term.set_dimmed(inactive);
+                for tab in p.tabs.borrow().iter() {
+                    tab.term.set_dimmed(inactive);
+                    tab.header.pop_out.set_sensitive(multiple);
+                }
                 if inactive {
                     p.card.add_css_class("inactive");
                 } else {
                     p.card.remove_css_class("inactive");
                 }
-                p.header.pop_out.set_sensitive(multiple);
             }
             self.refresh_window_title(&win);
         }
@@ -1205,19 +1543,22 @@ impl App {
 
     /// Rebuild the header from the template. (Path trimming to fit the pane width happens in the
     /// header widget itself, since it depends on the pane's size.)
-    fn refresh_header(&self, pane: &Rc<Pane>) {
+    fn refresh_header(&self, pane: &Rc<TerminalTab>) {
         let info = self.effective_session(pane);
         {
             let cfg = self.cfg.borrow();
             let hc = &cfg.panes.header;
             let (session_text, badges) = session_labels(&cfg, &info);
             let cwd = pane.cwd.borrow().display().to_string();
+            let title = pane.title.borrow();
+            pane.header.widget().set_tooltip_text(Some(&cwd));
+            pane.header.widget().update_property(&[gtk::accessible::Property::Label(&cwd)]);
             let home = glib::home_dir().display().to_string();
             pane.header.set_input(header::HeaderInput {
                 template: hc.template.clone(),
                 path: header::replace_path(&cwd, &hc.path_replacements, Some(&home)),
                 dir: header::dir_name(&cwd).to_owned(),
-                title: pane.title.borrow().clone(),
+                title: title.clone(),
                 host: pane.host.borrow().clone(),
                 user: glib::user_name().to_string_lossy().into_owned(),
                 session: session_text,
@@ -1227,14 +1568,15 @@ impl App {
             pane.header.set_badges(&badges);
             pane.header.set_session_class(info.items.first().map(|i| i.kind.header_class()));
         }
-        let win = pane.win.borrow().clone();
-        self.refresh_window_title(&win);
-        self.refresh_status(&win);
+        if let Some(win) = pane.win().filter(|_| self.is_win_active(pane)) {
+            self.refresh_window_title(&win);
+            self.refresh_status(&win);
+        }
     }
 
     /// The process-tree detection plus "the shell reports another host" (OSC 7), restricted to
     /// the kinds the config enables.
-    fn effective_session(&self, pane: &Rc<Pane>) -> SessionInfo {
+    fn effective_session(&self, pane: &Rc<TerminalTab>) -> SessionInfo {
         let cfg = self.cfg.borrow();
         if !cfg.session.detect {
             return SessionInfo::default();
@@ -1260,19 +1602,19 @@ impl App {
 
     /// The session changed: update the header (text + badges) and, if this window shows it, the
     /// frame colour.
-    fn refresh_session(self: &Rc<Self>, pane: &Rc<Pane>) {
+    fn refresh_session(self: &Rc<Self>, pane: &Rc<TerminalTab>) {
         self.refresh_header(pane);
         if self.is_win_active(pane) {
             self.refresh_frames();
         }
     }
 
-    fn is_active_anywhere(&self, pane: &Rc<Pane>) -> bool {
+    fn is_active_anywhere(&self, pane: &Rc<TerminalTab>) -> bool {
         self.active.borrow().upgrade().is_some_and(|a| Rc::ptr_eq(&a, pane))
     }
 
     /// The shell reported a new working directory.
-    fn on_pwd(self: &Rc<Self>, pane: &Rc<Pane>, uri: &str) {
+    fn on_pwd(self: &Rc<Self>, pane: &Rc<TerminalTab>, uri: &str) {
         let (host, path) = header::parse_uri(uri);
         let host_changed = *pane.host.borrow() != host;
         *pane.host.borrow_mut() = host;
@@ -1299,7 +1641,7 @@ impl App {
     }
 
     /// Walk up from the pane's directory to find its `.paua.yaml` and load it.
-    fn resolve_dir(&self, pane: &Rc<Pane>) {
+    fn resolve_dir(&self, pane: &Rc<TerminalTab>) {
         let entry = config::find_dir_config(&pane.cwd.borrow()).map(|path| {
             let cfg = config::load_dir(&path).unwrap_or_else(|e| {
                 self.toast(&format!("Config error: {e}"));
@@ -1313,7 +1655,7 @@ impl App {
 
     /// Read the project colour from the nearest `.vscode/settings.json`. Problems with a file we
     /// don't own are only logged, never shown.
-    fn load_vscode_color(&self, pane: &Rc<Pane>) {
+    fn load_vscode_color(&self, pane: &Rc<TerminalTab>) {
         let cfg = self.cfg.borrow();
         let color = if cfg.window.vscode_colors {
             config::find_vscode_settings(&pane.cwd.borrow()).and_then(|path| {
@@ -1329,7 +1671,7 @@ impl App {
     }
 
     /// Re-read the contents of the pane's already-found `.paua.yaml` (no directory walk).
-    fn reload_dir_entry(&self, pane: &Rc<Pane>) {
+    fn reload_dir_entry(&self, pane: &Rc<TerminalTab>) {
         let mut dir = pane.dir.borrow_mut();
         if let Some(entry) = dir.as_mut() {
             match config::load_dir(&entry.path) {
@@ -1339,11 +1681,15 @@ impl App {
         }
     }
 
-    fn set_active(self: &Rc<Self>, pane: &Rc<Pane>) {
+    fn set_active(self: &Rc<Self>, pane: &Rc<TerminalTab>) {
+        let Some(group) = pane.pane.upgrade() else { return };
+        if !group.selected_tab().is_some_and(|tab| Rc::ptr_eq(&tab, pane)) {
+            return;
+        }
         if self.is_active_anywhere(pane) && self.is_win_active(pane) {
             return;
         }
-        pane.focus_seq.set(self.next_focus_seq());
+        group.focus_seq.set(self.next_focus_seq());
         *self.active.borrow_mut() = Rc::downgrade(pane);
         if self.cfg.borrow().watch {
             self.reload_dir_entry(pane);
@@ -1363,13 +1709,17 @@ impl App {
     /// window colour.
     fn refresh_frames(&self) {
         let dark = adw::StyleManager::default().is_dark();
-        let base = self.cfg.borrow().window_color(dark);
+        let cfg = self.cfg.borrow();
+        let base = cfg.window_color(dark);
+        let underline = TabUnderline {
+            height: cfg.panes.tabs.active_underline_height.min(12),
+            color: cfg.panes.tabs.active_color.and_then(|tint| tint.resolve(dark)),
+        };
         for win in self.all_wins() {
             let mut color = base;
             let mut session_color = None;
             if let Some(pane) = self.win_active(&win) {
                 let info = self.effective_session(&pane);
-                let cfg = self.cfg.borrow();
                 session_color = info
                     .items
                     .iter()
@@ -1384,7 +1734,7 @@ impl App {
                 }
             }
             // An active ssh/sudo/... session's colour wins: it is a warning, not a preference.
-            win.frame.set(&win.window, session_color.unwrap_or(color));
+            win.frame.set(&win.window, session_color.unwrap_or(color), underline);
         }
     }
 
@@ -1392,8 +1742,19 @@ impl App {
     fn apply_header_css(&self) {
         let cfg = self.cfg.borrow();
         let hc = &cfg.panes.header;
-        let mut css = String::new();
+        let tabs = &cfg.panes.tabs;
+        let mut css = format!(
+            "window.themed .pane-header-row.multiple-tabs .pane-header {{ min-width: {}px; }}\n",
+            tabs.min_width.min(1000),
+        );
         for (mode, dark) in [("dark", true), ("light", false)] {
+            if let Some(color) = tabs.attention_color.and_then(|tint| tint.resolve(dark)) {
+                css += &format!(
+                    "window.themed.{mode} .pane-header-row.multiple-tabs .pane-header.needs-attention {{ \
+                     box-shadow: inset -1px 0 rgba(128, 128, 128, 0.25), inset 0 -2px {}; }}\n",
+                    color.css(),
+                );
+            }
             if let Some(bg) = hc.background.and_then(|b| b.resolve(dark)) {
                 css += &format!("window.{mode} .pane-header {{ background-color: {}; }}\n", bg.css());
             }
@@ -1486,7 +1847,7 @@ impl App {
             .active
             .borrow()
             .upgrade()
-            .map(|p| p.win.borrow().clone())
+            .and_then(|p| p.win())
             .or_else(|| self.wins.borrow().first().cloned());
         if let Some(win) = win {
             self.toast_in(&win, msg);
@@ -1528,8 +1889,14 @@ impl App {
     }
 
     fn reload_user(self: &Rc<Self>) {
-        match config::load_user() {
-            Ok(cfg) => {
+        let loaded = config::load_user().and_then(|cfg| {
+            let bindings = Bindings::resolve(&cfg.shortcuts)?;
+            Ok((cfg, bindings))
+        });
+        match loaded {
+            Ok((cfg, bindings)) => {
+                bindings.install(&self.gtk_app, Some(&self.shortcuts.borrow()));
+                *self.shortcuts.borrow_mut() = Rc::new(bindings);
                 *self.cfg.borrow_mut() = cfg;
                 self.apply_config();
                 self.toast("Config reloaded");
@@ -1540,10 +1907,14 @@ impl App {
 
     /// Apply the settings that can change at runtime. Window size/maximized are startup-only.
     fn apply_config(self: &Rc<Self>) {
-        let panes: Vec<Rc<Pane>> = self.panes.borrow().clone();
+        let panes = self.all_tabs();
         {
             let cfg = self.cfg.borrow();
             let font = cfg.font.pango_string();
+            for pane in self.panes.borrow().iter() {
+                pane.new_tab_button.set_icon_name(&cfg.panes.tabs.new_tab_icon);
+                self.update_new_tab_tooltip(&pane.new_tab_button);
+            }
             for p in &panes {
                 p.term.set_font(&font, font_weights(&cfg), cfg.font.features.clone());
                 p.term.set_inactive_style(cfg.panes.inactive.style(), cfg.panes.inactive.fade_ms);
@@ -1562,6 +1933,7 @@ impl App {
         if let (_, Some(warning)) = themes::resolve(&self.cfg.borrow().terminal, adw::StyleManager::default().is_dark()) {
             self.toast(&format!("Config error: {warning}"));
         }
+        let shortcuts = self.shortcuts.borrow().clone();
         for win in self.all_wins() {
             win.status.configure(&self.cfg.borrow().status_bar);
             self.refresh_status(&win);
@@ -1569,6 +1941,8 @@ impl App {
             let cfg = self.cfg.borrow();
             win.search.set_defaults(cfg.search.case, cfg.search.regex);
             win.search.set_max_results(cfg.palette.max_results);
+            win.search.set_shortcuts(shortcuts.clone());
+            shortcuts.refresh_dialog(&win.window);
         }
         for p in &panes {
             self.refresh_header(p);
@@ -1610,7 +1984,7 @@ impl App {
                     return;
                 }
                 // Reload this file for every pane that uses it, then recolour.
-                for pane in app.panes.borrow().iter() {
+                for pane in app.all_tabs() {
                     let mut dir = pane.dir.borrow_mut();
                     if let Some(entry) = dir.as_mut().filter(|e| e.path == path) {
                         match config::load_dir(&path) {
@@ -1623,5 +1997,168 @@ impl App {
             });
         });
         *self.dir_monitor.borrow_mut() = Some(monitor);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn wait_for(message: &str, ready: impl Fn() -> bool) {
+        let context = glib::MainContext::default();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            context.iteration(false);
+            if ready() {
+                return;
+            }
+            assert!(Instant::now() < deadline, "{message}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a GTK display"]
+    fn shortcut_actions_use_overrides_and_open_help() {
+        adw::init().unwrap();
+        let gtk_app = adw::Application::builder()
+            .application_id("io.github.gregbacchus.Paua.ShortcutTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        gtk_app.register(None::<&gio::Cancellable>).unwrap();
+        crate::install_actions(&gtk_app);
+        let mut cfg: UserConfig = serde_yaml_ng::from_str(
+            "shortcuts: { split_right: Ctrl+Shift+T, close_tab: [] }",
+        ).unwrap();
+        cfg.watch = false;
+        cfg.terminal.shell = Some("/bin/sh".into());
+        cfg.session.detect = false;
+        let app = App::build_with_config(&gtk_app, cfg, None);
+        let win = app.all_wins().remove(0);
+        assert_eq!(gtk_app.accels_for_action("win.keyboard-shortcuts"), ["F1"]);
+        assert!(gtk_app.accels_for_action("win.new-tab").is_empty());
+        assert!(gtk_app.accels_for_action("win.close-tab").is_empty());
+        assert_eq!(gtk_app.accels_for_action("win.split-right").len(), 1);
+        assert!(gtk::prelude::WidgetExt::activate_action(&win.window, "win.keyboard-shortcuts", None).is_ok());
+        wait_for("keyboard shortcuts dialog did not open", || win.window.visible_dialog().is_some());
+        let dialog = win.window.visible_dialog().unwrap().downcast::<adw::PreferencesDialog>().unwrap();
+        let old_page = dialog.visible_page().unwrap();
+        app.shortcuts.borrow().refresh_dialog(&win.window);
+        assert_ne!(dialog.visible_page(), Some(old_page));
+        assert!(dialog.visible_page().is_some());
+        dialog.close();
+        let conflict = serde_yaml_ng::from_str("{ new_tab: F1, close_tab: F1 }").unwrap();
+        assert!(Bindings::resolve(&conflict).is_err());
+        win.window.close();
+        APP.with(|slot| slot.borrow_mut().take());
+    }
+
+    #[test]
+    #[ignore = "needs a display and launches test shells"]
+    fn pane_tabs_keep_shells_alive_and_follow_their_pane() {
+        adw::init().unwrap();
+        let gtk_app = adw::Application::builder()
+            .application_id("io.github.gregbacchus.Paua.TabTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        gtk_app.register(None::<&gio::Cancellable>).unwrap();
+        crate::install_actions(&gtk_app);
+        crate::load_css();
+        let mut cfg = UserConfig::default();
+        cfg.watch = false;
+        cfg.window.width = config::Dim::Px(640.0);
+        cfg.terminal.shell = Some("/bin/sh".into());
+        cfg.session.detect = false;
+        let app = App::build_with_config(&gtk_app, cfg, None);
+        let win = app.all_wins().remove(0);
+        let left = app.panes_in(&win).remove(0);
+        let first = left.selected_tab().unwrap();
+        assert!(!left.header_row.has_css_class("multiple-tabs"));
+
+        first.term.type_text("sleep 0.1; printf 'hidden-%s\\n\\a' output\r");
+        let add = &left.new_tab_button;
+        add.emit_clicked();
+        let second = left.selected_tab().unwrap();
+        assert!(!Rc::ptr_eq(&first, &second));
+        assert_eq!(*first.cwd.borrow(), *second.cwd.borrow());
+        assert!(left.header_row.has_css_class("multiple-tabs"));
+        wait_for("both tab headers should be visible in one row", || {
+            let Some(a) = first.header.widget().compute_bounds(&left.header_row) else { return false };
+            let Some(b) = second.header.widget().compute_bounds(&left.header_row) else { return false };
+            let Some(plus) = add.compute_bounds(&left.header_row) else { return false };
+            a.width() > 0.0 && b.width() > 0.0 && a.y() == b.y() && a.x() < b.x() && b.x() < plus.x()
+        });
+        assert!(first.header.widget().is_mapped());
+        assert!(!first.term.is_mapped());
+        assert!(!first.header.widget().has_css_class("selected"));
+        assert!(second.header.widget().has_css_class("selected"));
+        wait_for("the hidden terminal stopped receiving output", || {
+            first.term.find(crate::terminal::FindOptions { query: "hidden-output".into(), ..Default::default() }).total == 1
+        });
+        wait_for("the hidden terminal's bell did not mark its header", || first.header.widget().has_css_class("needs-attention"));
+        first.term.find_clear();
+        first.term.type_text("printf '\\033]7;file://localhost/tmp\\007'\r");
+        wait_for("the hidden tab's path did not update", || *first.cwd.borrow() == std::path::Path::new("/tmp"));
+        first.header.copy.emit_clicked();
+        let copied = glib::MainContext::default().block_on(first.term.clipboard().read_text_future()).unwrap();
+        assert_eq!(copied.as_deref(), Some("/tmp"));
+        assert!(Rc::ptr_eq(&left.selected_tab().unwrap(), &second));
+        app.activate_tab(&first);
+        assert!(!first.header.widget().has_css_class("needs-attention"));
+        app.activate_tab(&second);
+
+        app.split(&win, gtk::Orientation::Horizontal);
+        let right = app.panes_in(&win).pop().unwrap();
+        let third = right.selected_tab().unwrap();
+        app.run_action(&win, "new_tab");
+        let fourth = right.selected_tab().unwrap();
+        assert!(Rc::ptr_eq(&left.selected_tab().unwrap(), &second));
+        assert!(!right.reorder_tab(first.header.widget(), &third, false));
+        assert!(right.reorder_tab(fourth.header.widget(), &third, false));
+        assert_eq!(right.headers.first_child().as_ref(), Some(fourth.header.widget()));
+        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &fourth));
+
+        win.search.open_find();
+        app.run_action(&win, "next_tab");
+        wait_for("find did not follow the selected terminal", || {
+            App::find_target(&win).is_some_and(|tab| Rc::ptr_eq(&tab, &third))
+        });
+
+        first.term.type_text("exit\r");
+        wait_for("exiting a hidden tab did not close it", || left.tabs.borrow().len() == 1);
+        assert!(!left.header_row.has_css_class("multiple-tabs"));
+        assert!(Rc::ptr_eq(&app.win_active(&win).unwrap(), &third));
+
+        fourth.header.pop_out.emit_clicked();
+        let moved = third.win().unwrap();
+        assert!(!Rc::ptr_eq(&win, &moved));
+        assert!(Rc::ptr_eq(&moved, &fourth.win().unwrap()));
+        assert_eq!(app.panes_in(&moved).len(), 1);
+        assert_eq!(right.tabs.borrow().len(), 2);
+        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &fourth));
+        assert!(Rc::ptr_eq(&App::find_target(&win).unwrap(), &second));
+        third.header.close.emit_clicked();
+        assert!(Rc::ptr_eq(&right.selected_tab().unwrap(), &fourth));
+        fourth.term.type_text("printf 'still-%s\\n' running\r");
+        wait_for("the remaining tab lost its shell after pop-out", || {
+            fourth.term.find(crate::terminal::FindOptions { query: "still-running".into(), ..Default::default() }).total == 1
+        });
+        app.run_action(&moved, "close_tab");
+        wait_for("closing the last tab did not close its window", || app.all_wins().len() == 1);
+
+        for _ in 0..5 {
+            left.new_tab_button.emit_clicked();
+        }
+        let last = left.selected_tab().unwrap();
+        wait_for("the selected tab should scroll into view when the row overflows", || {
+            let Some(bounds) = last.header.widget().compute_bounds(&left.header_viewport) else { return false };
+            left.header_viewport.hadjustment().is_some_and(|adjustment| adjustment.value() > 0.0)
+                && bounds.width() > 0.0
+                && bounds.x() >= -1.0
+                && bounds.x() + bounds.width() <= left.header_viewport.width() as f32 + 1.0
+        });
+        win.window.close();
+        APP.with(|slot| slot.borrow_mut().take());
     }
 }

@@ -117,17 +117,25 @@ cargo run
 ## Panes
 
 The app starts with one pane. The two icons at the top right of the title bar split the focused pane
-**right** or **down**; the new pane starts in the same directory and takes focus. Dividers drag.
-When a pane's shell exits the pane closes and its sibling takes the space; closing the last pane
-closes the window. Panes other than the focused one are dimmed/recoloured (see `panes.inactive`).
+**right** or **down**. The new pane starts with one terminal in the selected tab's directory and
+takes focus. Dividers drag. Panes other than the focused one are dimmed/recoloured (see `panes.inactive`).
 
-Each pane has a header line with configurable text (`panes.header.template`, font, alignment,
-background tint, text colour) and three buttons on the right:
+Click **+** at the right of the pane header or press **Ctrl+Shift+T** by default to add a terminal tab there.
+Tabs divide the existing header row, each with its own path, buttons, session badges, colours,
+timer, and bell indicator. An underline in the window frame colour marks the selected tab. Click a
+header to switch, drag to reorder, or use **Ctrl+Shift+Page Up / Page Down** to cycle. When the headers
+run out of room, use a horizontal swipe or the mouse wheel over the row. Each tab keeps its own
+shell and scrollback.
 
-- **copy path** (two overlapping sheets): copies the pane's real working directory to the clipboard.
-- **open in new window**: moves the pane, with its running shell, into its own full window (title
-  bar, status bar, splits, its own frame colour). Offered while the pane's window keeps another pane.
-- **close**: closes the pane and ends its shell.
+Header text, font, alignment, tint, and colour are configurable under `panes.header`. Tab width,
+the New Tab icon, and indicator colours are configurable under `panes.tabs`.
+
+- **Copy Path** sits beside the path and copies that tab's real working directory.
+- **Open in New Window** moves the whole pane and its running tabs to another window. It is
+  available when the original window has another pane.
+- **×** closes that tab. **Ctrl+Shift+W** closes the selected tab. Closing the last tab collapses its
+  pane, or closes the window if it was the last pane.
+- **File → Close Pane** ends all sessions in the pane, with confirmation when there is more than one tab.
 
 Closing a window closes its panes; the app ends when the last window closes. Each window has its own
 frame colour and its own focused pane, and the split buttons in a window's title bar act on that
@@ -154,6 +162,7 @@ window:                     # maximized/width/height apply at startup only
 panes:
   padding: 0                # px inside each pane edge; or { x: 8, y: 4 } / { top, right, bottom, left }
   inactive: { dim: 0.35, saturation: 0.6, lightness: 1.0, hue_shift: 0, fade_ms: 150 }
+  tabs: { min_width: 170, active_underline_height: 3 }  # active_color defaults to the window frame
   header:                   # the line above each terminal
     template: "{title|path}"   # {path} {dir} {title} {host} {user}
     align: center              # start | center | end
@@ -265,7 +274,7 @@ nothing is asked when it isn't running in a terminal).
 
 The bar at the bottom of each window is a row of widgets, left and right. When the window is too
 narrow the **lowest `priority`** widgets drop out first. Without a `status_bar.widgets` list you get
-git (left), a recent-directories menu and a clock (right). Widgets describe the **focused pane**.
+git (left), a recent-directories menu and a clock (right). Widgets describe the **selected tab in the focused pane**.
 
 ```yaml
 status_bar:
@@ -287,7 +296,8 @@ plain `text`. Common fields: `icon`, `tooltip`, `when` (`files` / `not_files`, l
 directory and its parents), `color`, `background`, `hide_empty`. Templates (`text`, `tooltip`) use
 `{path} {dir} {host} {user} {title} {session} {exit} {output}`, `{a|b}` (first non-empty),
 `{?x:text}` / `{!x:text}` (only if `x` is set / not set) and `{{` `}}` for literal braces.
-Actions: `split_right`, `split_down`, `find`, `palette`, `clear`, `close_pane`, `pop_out`,
+Actions: `split_right`, `split_down`, `new_tab`, `close_tab`, `previous_tab`, `next_tab`,
+`find`, `palette`, `clear`, `close_pane`, `pop_out`,
 `copy_path`, `new_window`, `cycle_scheme`, `reload_config`, `open_config`, `type:<text>` (typed into
 the pane, then Enter) and `exec:<command>` (runs in the background, the result is a toast).
 
@@ -356,10 +366,23 @@ settings portal); if yours doesn't provide one, View -> Cycle Colour Scheme swit
 
 ## Menus and shortcuts
 
-The title-bar menus: **File** (New Window Ctrl+Shift+N, split right / down, open the pane in a new
-window, Close Pane Ctrl+Shift+W, open / reload the config, Quit Ctrl+Q), **Edit** (Copy Ctrl+Shift+C,
+The title-bar menus: **File** (New Window Ctrl+Shift+N, New Tab Ctrl+Shift+T, Close Tab Ctrl+Shift+W,
+previous / next tab, split right / down, open the pane in a new window, Close Pane,
+open / reload the config, Quit Ctrl+Q), **Edit** (Copy Ctrl+Shift+C,
 Paste Ctrl+Shift+V, copy the working directory, Clear Terminal, Find Ctrl+Shift+F, Command Palette
-Ctrl+Shift+P), **View** (cycle the colour scheme) and **Help** (About).
+Ctrl+Shift+P), **View** (cycle the colour scheme) and **Help** (Keyboard Shortcuts and About).
+
+Press **F1** or choose **Help → Keyboard Shortcuts** to see the keys currently in effect. Set
+`shortcuts` in `config.yaml` to assign a key, replace the defaults, or clear a binding. Changes apply live. See the
+[shortcut reference](docs/config/shortcuts.md) for action IDs and defaults.
+
+```yaml
+shortcuts:
+  keyboard_shortcuts: F1
+  split_right: Ctrl+Shift+E
+  new_tab: [Ctrl+Shift+T, Alt+T]
+  close_tab: []
+```
 
 ## Bell flash
 
@@ -369,13 +392,13 @@ out. Configure it under `panes.header.bell`: `enabled`, `duration` (fade time, d
 
 ## Search box (find in output)
 
-The box in the title bar searches the **focused pane's output** (scrollback and screen). Press
+The box in the title bar searches the **selected tab in the focused pane** (scrollback and screen). Press
 **Ctrl+Shift+F** or click the box; a `/` chip shows you are in find mode. Matches are highlighted in
 the pane (the current one more strongly) and the box shows `3/42`. **Enter** / **Down** = next,
 **Shift+Enter** / **Up** = previous (wrapping), **Esc** closes it, clears the highlights and returns
 focus to the terminal. Toggles: `Aa` match case, `.*` regular expression. By default the search is
 smart-case. Typing updates the results as you go, and results stay current while output arrives. If
-you focus another pane while the box is open, the find moves to that pane. Reopening restores the
+you select another tab or focus another pane while the box is open, the find moves there. Reopening restores the
 last query. A match that wraps across a soft-wrapped line break is not found. Colours and defaults
 are under `search:` in the config. The same box is also the command palette (see below).
 
@@ -389,10 +412,10 @@ filtered as you type with a fuzzy match (`spr` finds *Split right*; matched lett
 **Esc** closes. While you've typed something, the first row is **Find "…" in output**, which switches
 to find with your text. What it offers:
 
-- **Commands:** find in output, split right/down, open pane in new window, close pane, copy working
+- **Commands:** find in output, new/close/previous/next tab, split right/down, open pane in new window, close pane, copy working
   directory, new window, cycle colour scheme, reload config, open config file;
 - **your own commands** (`palette.commands`: a title and text to type into the focused pane);
-- **Go to** another pane, in any window;
+- **Go to** any terminal tab, including tabs in other panes and windows;
 - **cd** to recently visited directories (needs the shell to report its directory via OSC 7);
 - **ssh** to the hosts named in `~/.ssh/config` (wildcard hosts are skipped).
 

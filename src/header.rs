@@ -8,12 +8,12 @@ use gtk::{glib, pango, prelude::*};
 
 use crate::config::{HeaderAlign, HeaderConfig, PathReplacement, TimerPosition};
 
-/// Space reserved on the right for the two buttons, so centred text is centred in the pane.
-const BUTTONS_WIDTH: i32 = 92;
+/// Space reserved on the right for Pop Out and Close.
+const BUTTONS_WIDTH: i32 = 64;
 /// Extra space reserved on the right while the command timer chip is showing.
 const TIMER_WIDTH: i32 = 88;
 /// Horizontal padding inside the label (`.pane-title` in style.css) plus a little slack.
-const LABEL_PADDING: i32 = 16 + 4;
+const LABEL_PADDING: i32 = 9 + 4;
 
 /// Everything the header text is built from. Kept so the text can be re-laid-out when the pane
 /// is resized (path trimming depends on the available width).
@@ -57,6 +57,8 @@ impl HeaderInput {
 pub struct PaneHeader {
     root: gtk::Overlay,
     label: gtk::Label,
+    path_slot: gtk::Box,
+    path_group: gtk::Box,
     badges: gtk::Box,
     /// The running-command timer chip (right side, before the buttons).
     timer: gtk::Label,
@@ -65,6 +67,7 @@ pub struct PaneHeader {
     buttons: gtk::Box,
     timer_pos: Cell<TimerPosition>,
     align: Cell<HeaderAlign>,
+    tabbed: Cell<bool>,
     input: Rc<RefCell<HeaderInput>>,
     pub copy: gtk::Button,
     pub pop_out: gtk::Button,
@@ -97,7 +100,6 @@ impl PaneHeader {
             .visible(false)
             .build();
         buttons.append(&timer);
-        buttons.append(&copy);
         buttons.append(&pop_out);
         buttons.append(&close);
 
@@ -110,35 +112,48 @@ impl PaneHeader {
             .visible(false)
             .build();
         let row = gtk::Box::builder().orientation(gtk::Orientation::Horizontal).hexpand(true).build();
+        let path_group = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .hexpand(true)
+            .halign(gtk::Align::Center)
+            .build();
+        path_group.append(&label);
+        path_group.append(&copy);
+        let path_slot = gtk::Box::builder().orientation(gtk::Orientation::Horizontal).hexpand(true).build();
+        path_slot.append(&path_group);
         row.append(&badges);
-        row.append(&label);
+        row.append(&path_slot);
 
-        let root = gtk::Overlay::builder().css_classes(["pane-header"]).build();
+        let root = gtk::Overlay::builder()
+            .accessible_role(gtk::AccessibleRole::Tab)
+            .css_classes(["pane-header"])
+            .build();
         root.set_child(Some(&row));
         let flash = gtk::Box::builder().css_classes(["pane-bell"]).can_target(false).can_focus(false).build();
         root.add_overlay(&flash);
         root.add_overlay(&buttons);
 
-        // Re-fit the text whenever the label's width changes. The closure only holds the input
-        // (no widgets), so it can't keep the label alive.
+        // Fit to the whole slot so a shortened path can grow again when the pane gets wider.
         let input = Rc::new(RefCell::new(HeaderInput::default()));
         let last_width = Cell::new(-1);
-        label.add_tick_callback({
+        path_slot.add_tick_callback({
             let input = input.clone();
-            move |label, _| {
-                let w = label.width();
+            let (label, copy) = (label.downgrade(), copy.downgrade());
+            move |slot, _| {
+                let (Some(label), Some(copy)) = (label.upgrade(), copy.upgrade()) else { return glib::ControlFlow::Break };
+                let w = slot.width() - copy.measure(gtk::Orientation::Horizontal, -1).0;
                 if w != last_width.get() {
                     last_width.set(w);
-                    relayout(label, &input.borrow());
+                    relayout(&label, &input.borrow(), w);
                 }
                 glib::ControlFlow::Continue
             }
         });
 
-        Self { root, label, badges, timer, flash, row, buttons, timer_pos: Cell::new(TimerPosition::Right), align: Cell::new(HeaderAlign::Center), input, copy, pop_out, close }
+        Self { root, label, path_slot, path_group, badges, timer, flash, row, buttons, timer_pos: Cell::new(TimerPosition::Right), align: Cell::new(HeaderAlign::Center), tabbed: Cell::new(false), input, copy, pop_out, close }
     }
 
-    fn button(icon: &str, tooltip: &str) -> gtk::Button {
+    pub fn button(icon: &str, tooltip: &str) -> gtk::Button {
         gtk::Button::builder()
             .icon_name(icon)
             .tooltip_text(tooltip)
@@ -151,9 +166,33 @@ impl PaneHeader {
         self.root.upcast_ref()
     }
 
+    pub fn set_tabbed(&self, tabbed: bool) {
+        if self.tabbed.replace(tabbed) == tabbed {
+            return;
+        }
+        self.root.set_focusable(tabbed);
+        self.close.set_tooltip_text(Some(if tabbed { "Close tab" } else { "Close pane" }));
+        self.apply_margins();
+    }
+
+    pub fn set_selected(&self, selected: bool) {
+        if selected {
+            self.root.add_css_class("selected");
+            self.root.remove_css_class("needs-attention");
+        } else {
+            self.root.remove_css_class("selected");
+        }
+        self.root.update_state(&[gtk::accessible::State::Selected(Some(selected))]);
+    }
+
     pub fn set_input(&self, input: HeaderInput) {
         *self.input.borrow_mut() = input;
-        relayout(&self.label, &self.input.borrow());
+        self.relayout();
+    }
+
+    fn relayout(&self) {
+        let width = self.path_slot.width() - self.copy.measure(gtk::Orientation::Horizontal, -1).0;
+        relayout(&self.label, &self.input.borrow(), width);
     }
 
     #[cfg(test)]
@@ -185,7 +224,7 @@ impl PaneHeader {
         self.align.set(cfg.align);
         self.set_timer_position(cfg.command_timer.position);
         self.apply_margins();
-        relayout(&self.label, &self.input.borrow()); // new font = new text widths
+        self.relayout(); // new font = new text widths
     }
 
     /// Flash the header (the stylesheet fades it out).
@@ -272,15 +311,15 @@ impl PaneHeader {
         let timer_left = self.timer.is_visible() && self.timer_pos.get() == TimerPosition::Left;
         let right = BUTTONS_WIDTH + if timer_right { TIMER_WIDTH } else { 0 };
         let badges = badges || timer_left; // something sits before the text
-        let (xalign, start, end) = match self.align.get() {
-            HeaderAlign::Start => (0.0, 0, right),
-            // Truly centred when nothing sits before the text; otherwise centred in what is left.
-            HeaderAlign::Center => (0.5, if badges { 6 } else { right }, right),
-            HeaderAlign::End => (1.0, 0, right),
+        let (align, start) = match self.align.get() {
+            HeaderAlign::Start => (gtk::Align::Start, 0),
+            // Tab headers share the pane width, so centre within the space left by the controls.
+            HeaderAlign::Center => (gtk::Align::Center, if badges || self.tabbed.get() { 6 } else { right }),
+            HeaderAlign::End => (gtk::Align::End, 0),
         };
-        self.label.set_xalign(xalign);
-        self.label.set_margin_start(start);
-        self.label.set_margin_end(end);
+        self.path_group.set_halign(align);
+        self.path_slot.set_margin_start(start);
+        self.path_slot.set_margin_end(right);
     }
 
     /// Show one badge per `(text, css kind)`; none hides the badge area.
@@ -304,9 +343,9 @@ impl PaneHeader {
 }
 
 /// Set the label text, trimming the path from its middle if the text is wider than the label.
-fn relayout(label: &gtk::Label, input: &HeaderInput) {
+fn relayout(label: &gtk::Label, input: &HeaderInput, width: i32) {
     let full = input.full_text();
-    let avail = label.width() - LABEL_PADDING;
+    let avail = width - LABEL_PADDING;
     if !input.trim || avail <= 0 {
         label.set_label(&full);
         return;
@@ -652,6 +691,12 @@ mod tests {
         let wide = header.shown_text();
         eprintln!("wide: {wide:?}");
         assert_eq!(wide, "~/code/sandbox/rust/ui-sandbox/src/terminal");
+        let label = header.label.compute_bounds(header.widget()).unwrap();
+        let copy = header.copy.compute_bounds(header.widget()).unwrap();
+        let slot = header.path_slot.compute_bounds(header.widget()).unwrap();
+        assert!((label.x() + label.width() - copy.x()).abs() <= 1.0);
+        let group_center = (label.x() + copy.x() + copy.width()) / 2.0;
+        assert!((group_center - (slot.x() + slot.width() / 2.0)).abs() <= 1.0);
         window.close();
     }
 

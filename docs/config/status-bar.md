@@ -2,7 +2,7 @@
 
 The bar at the bottom of each window is a row of **widgets**, left and right. Each widget has a
 `priority`: when the window is too narrow the **lowest priority drops out first** (of equals, the
-one configured last). Widgets describe the **focused pane**: its directory, git repository, host,
+one configured last). Widgets describe the **selected tab in the focused pane**: its directory, git repository, host,
 session and last exit status.
 
 Without a `status_bar.widgets` list you get git on the left and a recent-directories menu and a
@@ -115,13 +115,18 @@ Used by `action` and `menu[].action`:
 | Action | Does |
 |---|---|
 | `split_right`, `split_down` | Split the focused pane. |
+| `new_tab`, `close_tab`, `previous_tab`, `next_tab` | Create, close, or switch terminal tabs in the focused pane. |
 | `find`, `palette` | Open the title-bar box in that mode. |
-| `clear` | Clear the focused pane's screen and scrollback. |
-| `close_pane`, `pop_out`, `copy_path` | Close / open in a new window / copy the working directory of the focused pane. |
-| `new_window` | Open a window in the focused pane's directory. |
+| `clear` | Clear the selected tab's screen and scrollback. |
+| `scroll_to_bottom` | Return to the selected tab's newest output. |
+| `copy`, `paste`, `paste_primary` | Copy the selection, paste the clipboard, or paste the primary selection. |
+| `close_pane`, `pop_out`, `copy_path` | Close or move the focused pane and all its tabs, or copy the selected tab's working directory. |
+| `new_window` | Open a window in the selected tab's directory. |
 | `cycle_scheme` | Cycle system / light / dark. |
 | `reload_config`, `open_config` | Re-read / open the config file. |
-| `type:<text>` | Type `<text>` into the focused pane, then Enter. |
+| `keyboard_shortcuts`, `about` | Open the keyboard cheat sheet or About Paua. |
+| `git_sync`, `git_fetch`, `git_pull`, `git_push` | Run the Git widget's repository actions when it has detected a repository. |
+| `type:<text>` | Type `<text>` into the selected tab, then Enter. |
 | `exec:<command>` | Run a shell command in the background in the pane's directory (killed after 60 s); the first line of the result is shown as a toast. |
 
 An unknown action shows a toast saying so.

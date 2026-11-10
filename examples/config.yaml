@@ -9,6 +9,14 @@
 # Reload this file (and the focused pane's .paua.yaml) when it changes. Default: true.
 watch: true
 
+# Keyboard shortcuts apply live. Unlisted actions keep their defaults. Use [] to clear a binding.
+shortcuts:
+  new_tab: Ctrl+Shift+T
+  copy: [Ctrl+Shift+C, Ctrl+Insert]
+  keyboard_shortcuts: F1 # default, opens Help → Keyboard Shortcuts
+  # split_right: Ctrl+Shift+E
+  # "type:git status": Ctrl+Alt+G
+
 # ---------------------------------------------------------------------------------------------
 # Terminal font
 # ---------------------------------------------------------------------------------------------
@@ -51,7 +59,15 @@ panes:
     hue_shift: 0 # degrees, -360..360
     fade_ms: 150 # 0 = instant
 
-  # The line above each terminal.
+  # Shared tab row. Changes apply live.
+  tabs:
+    min_width: 170 # minimum header content width in px when a pane has several tabs
+    new_tab_icon: list-add-symbolic # GTK icon name for the shared button at the right
+    active_underline_height: 3 # px, or 0 to hide the underline
+    active_color: null # follow the window frame, or set a themed tint
+    attention_color: "#e5a50a" # mark on background tabs that ring the bell
+
+  # The header content for each terminal.
   header:
     template: "{path}" # {path} {dir} {title} {host} {user} {session}; {title|path} = first non-empty
     align: center # start (left) | center | end (right)
@@ -67,7 +83,7 @@ panes:
       - { from: $HOME, to: "\uf015" } # nf-fa-home
       - { from: Downloads, to: "\uf019" } # nf-fa-download, wherever the folder is
     # Too wide for the pane? Remove whole path segments from the middle: ~/a/b/c/d -> ~/a/…/d
-    trim_path: true
+    trim_path: true             # shorten the path to fit its tab header
     path_ellipsis: "…" # or "..."
     # Header background (laid over the pane colour) and text / icon colour. Unset = no tint.
     background: { dark: "#ffffff14", light: "#00000010" }
@@ -75,7 +91,7 @@ panes:
     # Button icons: any icon name from the theme or Paua's built-in icons.
     copy_icon: copy-path-symbolic # two overlapping sheets
     pop_out_icon: pop-out-symbolic
-    close_icon: window-close-symbolic
+    close_icon: window-close-symbolic # closes this tab, or its pane if it is the last tab
 
     # Flash the header when a program rings the terminal bell (BEL), e.g. `printf '\a'`.
     bell:

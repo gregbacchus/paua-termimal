@@ -1,15 +1,42 @@
 # Panes: `panes`
 
-Everything about the terminal panes: the space around the text, how unfocused panes look, and the
-header line above each terminal (path, buttons, command timer, bell flash).
+These settings cover the space around the terminal text, how unfocused panes look, and each tab's
+header. Tabs share a single header row, with one **+** button at the right. The Copy Path button
+sits beside its tab's path and follows the header alignment.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `panes.padding` | [padding](value-types.md#padding) | `0` | Space between a pane's edge and its text, in px. The pane background fills it. |
+| `panes.tabs` | map | [defaults below](#panestabs) | Shared tab row and indicators. Applies live. |
 
 ```yaml
 panes:
   padding: 0          # or 8, { x: 8, y: 4 }, { top: 4, left: 12 }
+```
+
+## `panes.tabs`
+
+When a pane has multiple tabs, the selected header is underlined. By default the underline follows
+the window frame, including colour changes from the directory, VS Code settings, session colours,
+and unfocused-window dimming. The headers keep their own background tints and badges. A background
+tab that rings the bell gets an attention mark until selected if header bells are enabled.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `panes.tabs.min_width` | integer px | `170` | Minimum content width of each header when there are multiple tabs. Use `0` to let the header contents set the minimum. Values above `1000` are capped. When the headers exceed the available width the row scrolls. Applies live. |
+| `panes.tabs.new_tab_icon` | [icon name](value-types.md#icon-names) | `list-add-symbolic` | Icon for the shared New Tab button at the right of the header row. Applies live. |
+| `panes.tabs.active_underline_height` | integer px | `3` | Thickness of the selected tab's underline. Use `0` to hide it. Values above `12` are capped. Applies live. |
+| `panes.tabs.active_color` | [themed tint](value-types.md#colours) | unset (window frame colour) | Override the selected tab's underline colour. Applies live. |
+| `panes.tabs.attention_color` | [themed tint](value-types.md#colours) | unset (`#e5a50a`) | Colour of the mark on background tabs that ring the bell. Applies live. |
+
+```yaml
+panes:
+  tabs:
+    min_width: 170
+    new_tab_icon: list-add-symbolic
+    active_underline_height: 3
+    # active_color: { dark: "#a792ed", light: "#593e9e" }  # unset follows the frame
+    # attention_color: "#e5a50a"
 ```
 
 ## `panes.inactive`
@@ -35,7 +62,7 @@ panes:
 
 ## `panes.header`
 
-The line above each terminal: a text template, the copy / pop-out / close buttons, session badges,
+Each tab's header: a text template, the copy / pop-out / close buttons, session badges,
 the command timer chip and the bell flash.
 
 | Key | Type | Default | Description |
@@ -43,13 +70,13 @@ the command timer chip and the bell flash.
 | `panes.header.template` | [template](value-types.md#templates) | `{path}` | The text. Placeholders: `{path}` (working directory after `path_replacements`), `{dir}` (its last component), `{title}` (the title the program set, OSC 0/2), `{host}`, `{user}`, `{session}` (detected session, e.g. `ssh me@box`). `{title\|path}` = the title if there is one, else the path. |
 | `panes.header.align` | `start` \| `center` \| `end` | `center` | Alignment of the text. Aliases: `left` = `start`, `right` = `end`. |
 | `panes.header.path_replacements` | list | `[{ from: $HOME, to: "~" }]` | Rewrite the start of the path, or folder names anywhere in it. See below. |
-| `panes.header.trim_path` | bool | `true` | When the text is too wide for the pane, drop whole path segments from the middle (`~/a/b/c/d` becomes `~/a/…/d`). |
+| `panes.header.trim_path` | bool | `true` | When the text is too wide for its header, drop whole path segments from the middle (`~/a/b/c/d` becomes `~/a/…/d`). |
 | `panes.header.path_ellipsis` | string | `…` | What replaces the removed segments (`...` also works). |
 | `panes.header.background` | [themed tint](value-types.md#colours) | unset | Tint laid over the pane background. `#rrggbbaa` for translucency. |
 | `panes.header.color` | [themed tint](value-types.md#colours) | unset (normal text colour, dimmed) | Text and icon colour. |
 | `panes.header.copy_icon` | [icon name](value-types.md#icon-names) | `copy-path-symbolic` | Icon of the *copy path* button. The built-in default shows two overlapping sheets. Applies live. |
 | `panes.header.pop_out_icon` | [icon name](value-types.md#icon-names) | `pop-out-symbolic` | Icon of the *open in a new window* button (also `pop-out-pip-symbolic`). |
-| `panes.header.close_icon` | [icon name](value-types.md#icon-names) | `window-close-symbolic` | Icon of the *close pane* button. |
+| `panes.header.close_icon` | [icon name](value-types.md#icon-names) | `window-close-symbolic` | Icon of the button that closes this tab. Closing the last tab closes the pane. Applies live. |
 
 A session (ssh, sudo...) can also tint the header line: see [sessions](session.md).
 

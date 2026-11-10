@@ -116,8 +116,27 @@ window.themed .pane.inactive .pane-header {
 
 window.themed .pane-title {
   opacity: 0.65;
-  padding: 4px 8px;
+  padding: 4px 1px 4px 8px;
 }
+
+window.themed .pane-header-row.multiple-tabs .pane-header {
+  box-shadow: inset -1px 0 rgba(128, 128, 128, 0.25), inset 0 -1px rgba(128, 128, 128, 0.25);
+}
+window.themed .pane-header-row.multiple-tabs .pane-header:hover {
+  box-shadow: inset -1px 0 rgba(128, 128, 128, 0.25), inset 0 -2px rgba(128, 128, 128, 0.60);
+}
+window.themed .pane-header-row.multiple-tabs .pane-header.selected {
+  transition: opacity 150ms ease-in-out, background-color 250ms ease-in-out, box-shadow 300ms ease-in-out;
+}
+window.themed .pane-header-row.multiple-tabs .pane-header.selected .pane-title { opacity: 1; }
+window.themed .pane-header-row.multiple-tabs .pane-header.needs-attention {
+  box-shadow: inset -1px 0 rgba(128, 128, 128, 0.25), inset 0 -2px #e5a50a;
+}
+window.themed .pane-header-row .pane-header:focus-visible {
+  outline: 2px solid @accent_bg_color;
+  outline-offset: -3px;
+}
+window.themed .pane-header-row .pane-new-tab { margin: 0 5px; }
 
 window.themed .pane-button {
   min-width: 26px;

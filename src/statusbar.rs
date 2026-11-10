@@ -92,6 +92,7 @@ enum Pick {
 
 /// The branch picker's widgets and data.
 struct BranchUi {
+    popover: gtk::Popover,
     entry: gtk::SearchEntry,
     list: gtk::Box,
     branches: RefCell<Vec<git::Branch>>,
@@ -516,7 +517,15 @@ impl StatusBar {
     /// The focused pane (or its directory, host, session...) changed.
     pub fn set_context(self: &Rc<Self>, ctx: Context) {
         let old = self.ctx.replace(ctx.clone());
-        self.apply_all(old.cwd != ctx.cwd);
+        let cwd_changed = old.cwd != ctx.cwd;
+        if cwd_changed {
+            self.git.borrow_mut().status = None;
+            let branches: Vec<_> = self.items.borrow().iter().filter_map(|it| it.branches.clone()).collect();
+            for ui in branches {
+                ui.popover.popdown();
+            }
+        }
+        self.apply_all(cwd_changed);
     }
 
     /// Something happened in the shell (a prompt appeared): re-run what depends on it.
@@ -634,9 +643,11 @@ impl StatusBar {
     fn render(&self, it: &Rc<Item>) {
         let ctx = self.ctx.borrow().clone();
         let data = it.data.borrow();
+        let current = data.fetched.as_ref().is_some_and(|(cwd, _)| *cwd == ctx.cwd);
+        let output = if current { data.output.as_str() } else { "" };
         let get = |k: &str| -> Option<String> {
             Some(match k {
-                "output" => data.output.clone(),
+                "output" => output.to_owned(),
                 "path" => ctx.path.clone(),
                 "dir" => ctx.dir.clone(),
                 "host" => ctx.host.clone(),
@@ -647,7 +658,7 @@ impl StatusBar {
                 _ => return None,
             })
         };
-        let mut wants = data.when_ok;
+        let mut wants = it.cfg.when.is_none() || (current && data.when_ok);
         let (text, tip) = match it.kind {
             Kind::Clock => {
                 let fmt = it.cfg.format.as_deref().unwrap_or("%H:%M");
@@ -661,7 +672,7 @@ impl StatusBar {
             }
             Kind::Git => return self.render_git(it),
             Kind::Exec => {
-                wants &= !(it.cfg.hide_empty && data.output.is_empty());
+                wants &= !(it.cfg.hide_empty && output.is_empty());
                 (template::render(it.cfg.text.as_deref().unwrap_or("{output}"), &get), None)
             }
             Kind::Dirs => (template::render(it.cfg.text.as_deref().unwrap_or("{dir}"), &get), None),
@@ -785,20 +796,24 @@ impl StatusBar {
         }
         let (cwd, timeout) = (self.ctx.borrow().cwd.clone(), self.cfg.borrow().git.timeout.0);
         let (epoch, weak) = (self.epoch.get(), self.me.clone());
-        exec::spawn(move || git::status(&cwd, timeout), move |res| {
+        let job_cwd = cwd.clone();
+        exec::spawn(move || git::status(&job_cwd, timeout), move |res| {
             let Some(sb) = weak.upgrade() else { return };
             if sb.epoch.get() != epoch {
                 return;
             }
+            let current = sb.ctx.borrow().cwd == cwd;
             let rerun = {
                 let mut g = sb.git.borrow_mut();
                 g.in_flight = false;
                 g.last = Some(Instant::now());
-                g.status = match res {
-                    Some(git::Fetched::Repo(s)) => Some(s),
-                    _ => None, // no git, not a repository, or too slow: hide the widget
-                };
-                std::mem::take(&mut g.pending)
+                if current {
+                    g.status = match res {
+                        Some(git::Fetched::Repo(s)) => Some(s),
+                        _ => None, // no git, not a repository, or too slow: hide the widget
+                    };
+                }
+                std::mem::take(&mut g.pending) || !current
             };
             sb.render_git_items();
             if rerun {
@@ -872,6 +887,20 @@ impl StatusBar {
         self.git_op("Sync", steps, true);
     }
 
+    pub fn git_action(self: &Rc<Self>, action: &str) {
+        if self.git.borrow().status.is_none() {
+            return;
+        }
+        let (label, args) = match action {
+            "git_sync" => return self.git_sync(),
+            "git_fetch" => ("Fetch", &["fetch", "--prune"][..]),
+            "git_pull" => ("Pull", &["pull", "--ff-only"][..]),
+            "git_push" => ("Push", &["push"][..]),
+            _ => return,
+        };
+        self.git_op(label, vec![args.iter().map(|arg| (*arg).into()).collect()], true);
+    }
+
     fn build_branch_popover(self: &Rc<Self>, pop: &gtk::Popover) -> BranchUi {
         let entry = gtk::SearchEntry::builder().placeholder_text("Switch branch or create one").build();
         let list = popover_rows();
@@ -884,17 +913,13 @@ impl StatusBar {
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
         let actions = gtk::Box::builder().spacing(4).homogeneous(true).build();
-        for (label, steps) in [
-            ("Fetch", vec!["fetch", "--prune"]),
-            ("Pull", vec!["pull", "--ff-only"]),
-            ("Push", vec!["push"]),
-        ] {
+        for (label, action) in [("Fetch", "git_fetch"), ("Pull", "git_pull"), ("Push", "git_push")] {
             let b = gtk::Button::builder().label(label).css_classes(["flat"]).build();
             let (weak, pop) = (self.me.clone(), pop.clone());
             b.connect_clicked(move |_| {
                 pop.popdown();
                 if let Some(sb) = weak.upgrade() {
-                    sb.git_op(label, vec![steps.iter().map(|x| (*x).to_owned()).collect()], true);
+                    sb.git_action(action);
                 }
             });
             actions.append(&b);
@@ -910,13 +935,15 @@ impl StatusBar {
         content.append(&actions);
         pop.set_child(Some(&content));
 
-        let ui = BranchUi { entry: entry.clone(), list, branches: RefCell::default(), first: RefCell::default() };
+        let ui = BranchUi { popover: pop.clone(), entry: entry.clone(), list, branches: RefCell::default(), first: RefCell::default() };
 
         // (Re)load the branches whenever the popover opens.
         let weak = self.me.clone();
         pop.connect_show(move |pop| {
             let Some(sb) = weak.upgrade() else { return };
             let Some(ui) = sb.items.borrow().iter().find_map(|i| i.branches.clone()) else { return };
+            ui.branches.borrow_mut().clear();
+            ui.first.borrow_mut().take();
             ui.entry.set_text("");
             ui.entry.grab_focus();
             while let Some(c) = ui.list.first_child() {
@@ -925,8 +952,13 @@ impl StatusBar {
             ui.list.append(&gtk::Label::builder().label("Loading…").margin_top(8).margin_bottom(8).build());
             let (cwd, timeout) = (sb.ctx.borrow().cwd.clone(), sb.cfg.borrow().git.timeout.0.max(Duration::from_secs(5)));
             let (weak, pop) = (sb.me.clone(), pop.clone());
-            exec::spawn(move || git::branches(&cwd, timeout), move |res| {
+            let job_cwd = cwd.clone();
+            let epoch = sb.epoch.get();
+            exec::spawn(move || git::branches(&job_cwd, timeout), move |res| {
                 let Some(sb) = weak.upgrade() else { return };
+                if sb.epoch.get() != epoch || sb.ctx.borrow().cwd != cwd || !pop.is_visible() {
+                    return;
+                }
                 let Some(ui) = sb.items.borrow().iter().find_map(|i| i.branches.clone()) else { return };
                 match res {
                     Some(Ok(b)) => *ui.branches.borrow_mut() = b,

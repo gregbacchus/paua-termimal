@@ -1,7 +1,7 @@
 # Search and palette: `search`, `palette`
 
 The box in the middle of the title bar does two things: **find in output** (Ctrl+Shift+F, or click
-the box and type `/`) searches the focused pane's scrollback and screen, and the **command
+the box and type `/`) searches the selected tab's scrollback and screen, and the **command
 palette** (Ctrl+Shift+P, or click the box; type `>`) runs commands. A chip at the left of the box
 shows the mode.
 
@@ -24,10 +24,10 @@ search:
 
 ## `palette`
 
-Built-in entries: *Find in output, Split right, Split down, Open pane in new window, Close pane,
-Clear terminal, Copy working directory, New window, Cycle colour scheme, Reload config, Open config
-file*, *go to* each other pane (across windows), `cd` to recent directories, `ssh` to your SSH
-hosts, and your own commands.
+Built-in entries include *Find in output, Split right, Split down, New tab, Close tab, Previous tab,
+Next tab, Open pane in new window, Close pane, Clear terminal, Copy working directory, New window,
+Cycle colour scheme, Reload config,* and *Open config file*. You can also jump to tabs across panes
+and windows, `cd` to recent directories, `ssh` to your SSH hosts, and run your own commands.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -39,7 +39,7 @@ hosts, and your own commands.
 
 ### `palette.commands[]`
 
-Each entry types `run` into the focused pane, followed by Enter.
+Each entry types `run` into the selected tab in the focused pane, followed by Enter.
 
 | Key | Type | Default | Description |
 |---|---|---|---|

@@ -12,6 +12,7 @@ mod palette;
 mod searchbox;
 mod setup;
 mod session;
+mod shortcuts;
 mod statusbar;
 mod template;
 mod terminal;
@@ -121,13 +122,6 @@ fn install_actions(app: &adw::Application) {
     app.add_action_entries([gio::ActionEntry::builder("quit")
         .activate(|app: &adw::Application, _, _| app.quit())
         .build()]);
-    app.set_accels_for_action("app.quit", &["<Ctrl>q"]);
-    app.set_accels_for_action("win.new-window", &["<Ctrl><Shift>n"]);
-    app.set_accels_for_action("win.close-pane", &["<Ctrl><Shift>w"]);
-    app.set_accels_for_action("win.copy", &["<Ctrl><Shift>c"]);
-    app.set_accels_for_action("win.paste", &["<Ctrl><Shift>v"]);
-    app.set_accels_for_action("win.find", &["<Ctrl><Shift>f"]);
-    app.set_accels_for_action("win.command", &["<Ctrl><Shift>p"]);
 }
 
 fn build_ui(gtk_app: &adw::Application) {
