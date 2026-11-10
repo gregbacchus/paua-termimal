@@ -49,7 +49,13 @@ pub fn desktop_entry(exe: &Path) -> String {
          Categories=System;TerminalEmulator;\n\
          Keywords=terminal;shell;console;command line;\n\
          StartupNotify=true\n\
-         StartupWMClass={APP_ID}\n",
+         StartupWMClass={APP_ID}\n\
+         Actions=new-window;\n\
+         \n\
+         [Desktop Action new-window]\n\
+         Name=New Window\n\
+         Exec={}\n",
+        exec_quote(exe),
         exec_quote(exe)
     )
 }
@@ -195,9 +201,15 @@ mod tests {
             "Icon=io.github.gregbacchus.Paua",
             "StartupWMClass=io.github.gregbacchus.Paua",
             "Categories=System;TerminalEmulator;",
+            // The dock's right-click menu lists desktop actions.
+            "Actions=new-window;",
+            "[Desktop Action new-window]",
+            "Name=New Window",
         ] {
             assert!(d.lines().any(|l| l == line), "missing {line}");
         }
+        // Both entries launch the binary (each launch opens a window of its own).
+        assert_eq!(d.lines().filter(|l| *l == "Exec=/usr/bin/paua").count(), 2);
     }
 
     #[test]
