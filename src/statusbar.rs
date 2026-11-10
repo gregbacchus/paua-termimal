@@ -177,6 +177,11 @@ fn when_matches(w: &WhenConfig, cwd: &Path) -> bool {
     (w.files.is_empty() || w.files.iter().any(|f| exists_up(cwd, f))) && !w.not_files.iter().any(|f| exists_up(cwd, f))
 }
 
+/// Is this a theme icon name (`view-refresh-symbolic`) rather than text to show (`\u{f021}`)?
+fn is_icon_name(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')) && s.len() > 1
+}
+
 fn join(icon: &str, text: &str) -> String {
     match (icon.is_empty(), text.is_empty()) {
         (_, true) => icon.to_owned(),
@@ -431,9 +436,13 @@ impl StatusBar {
                 branches = Some(ui);
 
                 let sl = flat_label();
-                let img = gtk::Image::from_icon_name("view-refresh-symbolic");
                 let sbox = gtk::Box::builder().spacing(4).build();
-                sbox.append(&img);
+                let icon = self.cfg.borrow().git.sync_icon.clone();
+                if is_icon_name(&icon) {
+                    sbox.append(&gtk::Image::from_icon_name(&icon));
+                } else if !icon.is_empty() {
+                    sbox.append(&gtk::Label::new(Some(&icon))); // a glyph or other text
+                }
                 sbox.append(&sl);
                 let sbtn = gtk::Button::builder().child(&sbox).css_classes(["flat", "sb-git-sync"]).build();
                 let weak2 = weak.clone();
@@ -1100,6 +1109,7 @@ mod tests {
 
     #[test]
     fn helpers() {
+        assert!(is_icon_name("view-refresh-symbolic") && !is_icon_name("\u{f021}") && !is_icon_name("↻"));
         assert_eq!(class_name("my widget!"), "sb-my_widget_");
         assert_eq!(join("", "x"), "x");
         assert_eq!(join("i", ""), "i");

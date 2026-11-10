@@ -1,10 +1,28 @@
-# Paua
+# Paua - Colorful Shell
 
 *Paua* (te reo Māori for abalone / pāua shell: iridescent and colourful) is a colourful terminal. It is a native Rust GTK4 + libadwaita app for GNOME with a custom-coloured window frame
 (VS Code-like): app icon, menu bar and controls in the title bar, a status bar, and rounded content
 panes separated by draggable dividers. No web view; GTK's CSS is only used for styling.
 
-## Prerequisites (Ubuntu / GNOME)
+**Documentation:** every configuration option is documented in [`docs/`](docs/README.md) (start with
+[`docs/config/README.md`](docs/config/README.md)); a complete example is
+[`examples/config.yaml`](examples/config.yaml). Contributors and coding agents: see [`AGENTS.md`](AGENTS.md).
+
+## Install with Homebrew (Linux)
+
+```bash
+brew tap gregbacchus/tap
+brew install paua
+paua install        # adds Paua to the GNOME overview, with its icon
+paua                # run it
+```
+
+The package is a prebuilt binary that uses the **system** GTK 4 and libadwaita (Ubuntu 24.04 or
+newer, x86_64 or aarch64). If they are missing: `sudo apt install libgtk-4-1 libadwaita-1-0`.
+Update with `brew upgrade paua`; remove with `paua uninstall` followed by `brew uninstall paua`.
+To build from source instead, see below.
+
+## Build from source: prerequisites (Ubuntu / GNOME)
 
 ```bash
 sudo apt install build-essential pkg-config libgtk-4-dev libadwaita-1-dev
@@ -173,17 +191,9 @@ colours (running / done / failed), an icon, the threshold and the linger are con
 `cargo run`. In Zig's Debug mode it re-verifies its page structures on every hyperlink operation, and
 output with many OSC 8 links (nushell's `ls`/`la` link every file name) got slower with each run.
 
-## Installing with Homebrew, and releasing
+## Releasing and the Homebrew tap
 
-```bash
-brew tap gregbacchus/tap
-brew install paua
-paua install        # desktop entry + icons (uses brew's stable path, so upgrades keep working)
-```
-
-The brew package is the prebuilt binary from a GitHub release, linked against the **system** GTK 4
-and libadwaita (Ubuntu 24.04+; `sudo apt install libgtk-4-1 libadwaita-1-0` if missing), for x86_64
-and aarch64.
+Installing is covered [above](#install-with-homebrew-linux); this is how a release is made.
 
 **CI** (`.github/workflows/ci.yml`) builds and tests every push and pull request.
 **Releasing** (`.github/workflows/release.yml`): bump `version` in `Cargo.toml`, commit, then

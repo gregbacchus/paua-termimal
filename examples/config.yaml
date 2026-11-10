@@ -231,6 +231,7 @@ status_bar:
     timeout: 3s # kill `git status` after this long
     network_timeout: 60s # fetch / pull / push
     sync_button: true # pull (fast-forward only) then push, like VS Code
+    sync_icon: "\uf021" # a theme icon name (view-refresh-symbolic, emblem-synchronizing-symbolic...) or text / a glyph
 
   widgets:
     - { id: git, builtin: git, side: left, priority: 80 }

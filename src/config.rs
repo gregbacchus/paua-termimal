@@ -1417,6 +1417,9 @@ pub struct GitConfig {
     pub timeout: Span,
     /// The sync button (pull, then push) next to the branch.
     pub sync_button: bool,
+    /// Its icon: a theme icon name (`view-refresh-symbolic`, `emblem-synchronizing-symbolic`...) or
+    /// text such as a Nerd Font glyph. Empty = none.
+    pub sync_icon: String,
     /// Give up on fetch / pull / push after this long.
     pub network_timeout: Span,
 }
@@ -1431,6 +1434,7 @@ impl Default for GitConfig {
             interval: Span(std::time::Duration::from_secs(5)),
             timeout: Span(std::time::Duration::from_secs(3)),
             sync_button: true,
+            sync_icon: "view-refresh-symbolic".into(),
             network_timeout: Span(std::time::Duration::from_secs(60)),
         }
     }
@@ -1765,6 +1769,98 @@ status_bar:
         let d = normalize_surrogate_escapes(include_str!("../examples/paua.yaml"));
         let d: DirConfig = serde_yaml_ng::from_str(&d).unwrap_or_else(|e| panic!("examples/paua.yaml: {e}"));
         assert!(d.window.color.is_some());
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Documentation coverage: docs/config/*.md must describe exactly the options that exist.
+    // -----------------------------------------------------------------------------------------
+
+    /// The field names of a config struct, read from serde's "unknown field ..., expected one of
+    /// ..." error (test builds reject unknown fields).
+    fn field_names<T: serde::de::DeserializeOwned>() -> Vec<String> {
+        let err = serde_yaml_ng::from_str::<T>("{ __nope__: 1 }")
+            .err()
+            .expect("config structs deny unknown fields in test builds")
+            .to_string();
+        let after = err.split("expected").nth(1).unwrap_or("");
+        after.split('`').skip(1).step_by(2).map(str::to_owned).collect()
+    }
+
+    /// Every config option as a dotted path (`panes.header.bell.duration`; `[]` = each list entry).
+    /// When you add a config struct, add it here (see AGENTS.md).
+    fn all_option_paths() -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut add = |prefix: &str, fields: Vec<String>| {
+            for f in fields {
+                out.push(if prefix.is_empty() { f } else { format!("{prefix}.{f}") });
+            }
+        };
+        add("", field_names::<UserConfig>());
+        add("font", field_names::<FontConfig>());
+        add("window", field_names::<WindowConfig>());
+        add("panes", field_names::<PanesConfig>());
+        add("panes.inactive", field_names::<InactiveConfig>());
+        add("panes.header", field_names::<HeaderConfig>());
+        add("panes.header.font", field_names::<HeaderFont>());
+        add("panes.header.path_replacements[]", field_names::<PathReplacement>());
+        add("panes.header.command_timer", field_names::<CommandTimerConfig>());
+        add("panes.header.bell", field_names::<BellConfig>());
+        add("terminal", field_names::<TerminalConfig>());
+        add("terminal.scrollbar", field_names::<ScrollbarConfig>());
+        add("terminal.scroll_to_bottom_button", field_names::<ScrollButtonConfig>());
+        add("session", field_names::<SessionConfig>());
+        for kind in ["root", "sudo", "ssh", "container", "remote", "multiplexer"] {
+            add(&format!("session.{kind}"), field_names::<SessionKindConfig>());
+        }
+        add("search", field_names::<SearchConfig>());
+        add("palette", field_names::<PaletteConfig>());
+        add("palette.commands[]", field_names::<CustomCommand>());
+        add("status_bar", field_names::<StatusBarConfig>());
+        add("status_bar.font", field_names::<StatusFont>());
+        add("status_bar.git", field_names::<GitConfig>());
+        add("status_bar.git.icons", field_names::<GitIcons>());
+        add("status_bar.widgets[]", field_names::<WidgetConfig>());
+        add("status_bar.widgets[].when", field_names::<WhenConfig>());
+        add("status_bar.widgets[].menu[]", field_names::<MenuEntry>());
+        out
+    }
+
+    fn docs_text() -> String {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs");
+        let mut files = vec![root.join("README.md")];
+        for e in std::fs::read_dir(root.join("config")).expect("docs/config exists") {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "md") {
+                files.push(p);
+            }
+        }
+        files.iter().map(|f| std::fs::read_to_string(f).unwrap()).collect::<Vec<_>>().join("\n")
+    }
+
+    #[test]
+    fn docs_cover_every_config_option() {
+        let docs = docs_text();
+        let missing: Vec<String> =
+            all_option_paths().into_iter().filter(|p| !docs.contains(&format!("`{p}`"))).collect();
+        assert!(
+            missing.is_empty(),
+            "options missing from docs/config/*.md (document each as `path` in a table row): {missing:#?}"
+        );
+    }
+
+    #[test]
+    fn docs_do_not_describe_options_that_do_not_exist() {
+        let known: std::collections::HashSet<String> = all_option_paths().into_iter().collect();
+        let roots = ["watch", "font", "window", "panes", "terminal", "session", "search", "palette", "status_bar"];
+        let mut unknown = Vec::new();
+        for line in docs_text().lines().filter(|l| l.starts_with("| `")) {
+            let Some(path) = line[3..].split('`').next() else { continue };
+            let root = path.split(['.', '[']).next().unwrap_or("");
+            if roots.contains(&root) && !known.contains(path) {
+                unknown.push(path.to_owned());
+            }
+        }
+        assert!(unknown.is_empty(), "documented options that don't exist (renamed or removed?): {unknown:#?}");
     }
 
     #[test]
