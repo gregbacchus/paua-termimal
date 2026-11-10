@@ -13,6 +13,7 @@ watch: true
 shortcuts:
   new_tab: Ctrl+Shift+T
   copy: [Ctrl+Shift+C, Ctrl+Insert]
+  paste: [Ctrl+Shift+V, Ctrl+Shift+Insert] # keep both defaults for clipboard managers such as Copyous
   keyboard_shortcuts: F1 # default, opens Help → Keyboard Shortcuts
   # split_right: Ctrl+Shift+E
   # "type:git status": Ctrl+Alt+G

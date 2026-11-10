@@ -71,7 +71,13 @@ pub const ACTIONS: &[Action] = &[
     action!(Window, "pop_out", "Open pane in new window"),
     action!(Window, "close_pane", "Close pane"),
     action!(Window, "copy", "Copy", "Ctrl+Shift+C", "Ctrl+Insert"),
-    action!(Window, "paste", "Paste", "Ctrl+Shift+V"),
+    action!(
+        Window,
+        "paste",
+        "Paste",
+        "Ctrl+Shift+V",
+        "Ctrl+Shift+Insert"
+    ),
     action!(
         Window,
         "paste_primary",

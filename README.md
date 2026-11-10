@@ -202,8 +202,8 @@ swipes travel farther and coast after release, wheel steps ease), pane title fol
 
 - **Selection:** drag to select; double-click = word, triple-click = line; Alt+drag = rectangle.
   Dragging above/below the pane autoscrolls. Selecting copies to PRIMARY (middle-click pastes);
-  Ctrl+Shift+C / Ctrl+Insert copy to the clipboard; Ctrl+Shift+V pastes it; Shift+Insert pastes
-  PRIMARY.
+  Ctrl+Shift+C / Ctrl+Insert copy to the clipboard. Ctrl+Shift+V / Ctrl+Shift+Insert paste it, and
+  Shift+Insert pastes PRIMARY.
 - **Mouse in programs:** when a program enables mouse tracking (vim `set mouse=a`, htop, tmux...)
   clicks, drags, hover (any-event mode) and the wheel are reported to it (SGR and legacy formats).
   Hold **Shift** to select text locally instead. On the alternate screen without mouse tracking

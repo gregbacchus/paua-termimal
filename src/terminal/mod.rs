@@ -1358,6 +1358,8 @@ impl TermView {
     fn setup_controllers(&self) {
         // --- Input: IM context for text/compose/dead keys, key controller for the rest ---
         let im = gtk::IMMulticontext::new();
+        // Advertise terminal input so clipboard managers can send the terminal paste shortcut.
+        im.set_input_purpose(gtk::InputPurpose::Terminal);
         im.set_client_widget(Some(self));
         im.set_use_preedit(false);
         im.connect_commit(glib::clone!(

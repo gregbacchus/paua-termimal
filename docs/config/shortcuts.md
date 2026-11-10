@@ -49,7 +49,7 @@ shortcuts:
 | `pop_out` | Move the pane to a new window | — |
 | `close_pane` | Close the focused pane and all its tabs | — |
 | `copy` | Copy the selection | Ctrl+Shift+C, Ctrl+Insert |
-| `paste` | Paste from the clipboard | Ctrl+Shift+V |
+| `paste` | Paste from the clipboard | Ctrl+Shift+V, Ctrl+Shift+Insert |
 | `paste_primary` | Paste the primary selection | Shift+Insert |
 | `copy_path` | Copy the terminal's working directory | — |
 | `clear` | Clear the terminal | — |
@@ -69,8 +69,11 @@ shortcuts:
 | `type:<text>` | Type text into the terminal and press Enter | — |
 | `exec:<command>` | Run a command in the terminal's working directory and show its result in a toast | — |
 
-Copy and paste act on the focused text field when one is open. Git shortcuts apply when the Git
-widget has detected a repository. The two command forms use
+Copy and paste act on the focused text field when one is open. Clipboard managers such as Copyous
+can use Ctrl+Shift+Insert to paste into the terminal. Keep it in `paste` if you override that action
+and want automatic pasting from Copyous.
+
+Git shortcuts apply when the Git widget has detected a repository. The two command forms use
 the same syntax as [status bar actions](status-bar.md#actions). Define
 them in your user config. For example, `"type:git status"` does the same thing as a custom palette
 command whose `run` text is `git status`.

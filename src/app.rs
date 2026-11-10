@@ -2040,6 +2040,25 @@ mod tests {
         assert!(gtk_app.accels_for_action("win.new-tab").is_empty());
         assert!(gtk_app.accels_for_action("win.close-tab").is_empty());
         assert_eq!(gtk_app.accels_for_action("win.split-right").len(), 1);
+        let terminal = &app.win_active(&win).unwrap().term;
+        let controllers = terminal.observe_controllers();
+        assert!((0..controllers.n_items()).any(|i| {
+            controllers.item(i).and_downcast::<gtk::EventControllerKey>()
+                .and_then(|keys| keys.im_context())
+                .is_some_and(|im| im.input_purpose() == gtk::InputPurpose::Terminal)
+        }));
+        let terminal_paste = gtk::accelerator_parse("<Control><Shift>Insert").unwrap();
+        assert!(gtk_app.accels_for_action("win.paste").iter()
+            .any(|key| gtk::accelerator_parse(key.as_str()) == Some(terminal_paste)));
+        terminal.clipboard().set_text("clipboard-paste-test");
+        terminal.display().primary_clipboard().set_text("primary-paste-test");
+        for (action, expected) in [("win.paste", "clipboard-paste-test"), ("win.paste-primary", "primary-paste-test")] {
+            assert!(gtk::prelude::WidgetExt::activate_action(&win.window, action, None).is_ok());
+            wait_for(expected, || terminal.find(crate::terminal::FindOptions {
+                query: expected.into(), ..Default::default()
+            }).total == 1);
+            terminal.find_clear();
+        }
         assert!(gtk::prelude::WidgetExt::activate_action(&win.window, "win.keyboard-shortcuts", None).is_ok());
         wait_for("keyboard shortcuts dialog did not open", || win.window.visible_dialog().is_some());
         let dialog = win.window.visible_dialog().unwrap().downcast::<adw::PreferencesDialog>().unwrap();
