@@ -163,7 +163,7 @@ impl State {
             }
         }
         let re = self.url_re.as_ref()?;
-        let frame = read_frame(&self.term, &mut self.rs, &mut self.rows_it, &mut self.cells_it)?;
+        let frame = read_frame(&self.term, &mut self.rs, &mut self.rows_it, &mut self.cells_it, self.selection_bg)?;
         links::find_link(&frame.rows, &frame.wrapped, row as usize, col as usize, re)
     }
 

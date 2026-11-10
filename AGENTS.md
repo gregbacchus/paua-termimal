@@ -58,6 +58,8 @@ builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the
 | `src/terminal/` | The terminal widget `TermView` (libghostty-vt + portable-pty): `mod.rs` state / input / feed, `render.rs` (GSK snapshot, Pango runs, cairo nodes), `mouse.rs`, `scrollbar.rs`, `search.rs`, `input.rs`, `pty.rs`, `boxdraw.rs`, `osc133.rs` (semantic-prompt markers) |
 | `src/header.rs` | The pane header: template, path replacement and trimming, badges, timer chip, bell flash |
 | `src/statusbar.rs` | Status bar widgets, priority layout, background jobs; `src/git.rs` git status / branches / ops; `src/exec.rs` command runner with timeouts; `src/template.rs` templates |
+| `src/fonts.rs` | `paua fonts` and the setup offer: downloads Nerd Fonts from the official release (pinned `NERD_FONTS_VERSION`), verifies SHA-256, installs with licence files. Nothing is bundled; never download without the user's consent |
+| `src/themes.rs` | Terminal colour themes: built-ins, theme files (Ghostty + YAML), `terminal.colors`, and the `paua themes` CLI (`install` downloads the community collection) |
 | `src/session.rs` | ssh / sudo / container / multiplexer / remote detection from `/proc` |
 | `src/cmdtimer.rs` | Command-running timer state machine |
 | `src/searchbox.rs`, `src/palette.rs` | Title-bar find box / command palette and fuzzy matching |

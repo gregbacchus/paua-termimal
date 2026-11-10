@@ -124,6 +124,15 @@ terminal:
     idle_ms: 1200 # how long it lingers after scrolling (auto mode)
     fade_ms: 200
 
+  # Colour theme: one name for both colour schemes, or per scheme. Built in: paua (default), nord,
+  # dracula, solarized, gruvbox, one, catppuccin, tokyo-night; `paua themes install` adds ~900 more.
+  theme:
+    dark: Catppuccin Mocha
+    light: Catppuccin Latte
+  colors: # adjustments on top of the theme (all optional; each colour may be { dark, light })
+    cursor: { dark: "#f5c2e7", light: "#8839ef" }
+    palette: { 8: "#6c7086" } # e.g. a more readable bright black
+
   # Following links: hold the modifier, then click a URL (or an OSC 8 hyperlink) to open it.
   urls:
     enabled: true

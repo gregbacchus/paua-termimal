@@ -26,6 +26,71 @@ pub struct Options {
     pub print_only: bool,
     /// Offer to run `paua install` at the end (false when `install` itself started the wizard).
     pub offer_install: bool,
+    /// Download the missing Nerd Fonts without asking (`--yes` alone never downloads anything).
+    pub download_fonts: bool,
+}
+
+/// What the wizard needs from the system: which fonts are installed, and downloading fonts.
+pub trait FontOps {
+    fn installed_families(&self) -> Vec<String>;
+    fn install(&self, keys: &[&str], out: &mut dyn Write) -> Result<(), String>;
+}
+
+struct RealFonts;
+
+impl FontOps for RealFonts {
+    fn installed_families(&self) -> Vec<String> {
+        installed_families()
+    }
+
+    fn install(&self, keys: &[&str], out: &mut dyn Write) -> Result<(), String> {
+        crate::fonts::install_named(keys, out)?;
+        crate::fonts::refresh_font_cache(&crate::fonts::fonts_dir());
+        Ok(())
+    }
+}
+
+/// Offer to download the Nerd Fonts Paua suggests, when they aren't installed. Never downloads
+/// without the user's say-so: a yes at the prompt, or `--download-fonts`.
+fn offer_fonts(
+    input: &mut dyn BufRead,
+    out: &mut dyn Write,
+    ops: &dyn FontOps,
+    opts: Options,
+    families: &mut Vec<String>,
+) -> io::Result<()> {
+    use crate::fonts;
+    let missing: Vec<&fonts::Family> = fonts::SETUP_OFFER
+        .iter()
+        .filter_map(|k| fonts::find(k))
+        .filter(|f| !fonts::is_installed(f, families))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let names: Vec<&str> = missing.iter().map(|f| f.key).collect();
+    if opts.assume_yes && !opts.download_fonts {
+        writeln!(out, "Missing Nerd Fonts: {}. `paua fonts install {}` downloads them.", names.join(", "), names.join(" "))?;
+        return Ok(());
+    }
+    let mb: f32 = missing.iter().map(|f| f.mb).sum();
+    writeln!(out, "\nThese Nerd Fonts aren't installed yet:")?;
+    for f in &missing {
+        writeln!(out, "  {:<11} {} (~{} MB)", f.key, f.label, f.mb)?;
+    }
+    writeln!(
+        out,
+        "They are downloaded from the official release at github.com/ryanoasis/nerd-fonts (about {mb:.0} MB),\n\
+         checked against its SHA-256 sums and installed in ~/.local/share/fonts/NerdFonts.\n{}",
+        crate::fonts::LICENCE_NOTE
+    )?;
+    if opts.download_fonts || confirm(input, out, "Download and install them now?", true)? {
+        match ops.install(&names, out) {
+            Ok(()) => *families = ops.installed_families(),
+            Err(e) => writeln!(out, "Couldn't install the fonts: {e}\nYou can try again with `paua fonts install {}`.", names.join(" "))?,
+        }
+    }
+    Ok(())
 }
 
 /// Installed Nerd Font families, by variant.
@@ -90,7 +155,8 @@ pub fn parse_families(out: &str) -> Vec<String> {
 
 pub fn nerd_fonts(families: &[String]) -> NerdFonts {
     let mut n = NerdFonts::default();
-    for f in families.iter().filter(|f| f.contains("Nerd Font")) {
+    // "Symbols Nerd Font" is icons only, not a font to write text in.
+    for f in families.iter().filter(|f| f.contains("Nerd Font") && !f.starts_with("Symbols")) {
         if f.ends_with(" Propo") {
             n.propo.push(f.clone());
         } else if f.ends_with(" Mono") {
@@ -207,9 +273,10 @@ fn choose_fonts(
         writeln!(out, "No Nerd Fonts found (checked with `fc-list`).")?;
         writeln!(
             out,
-            "Nerd Fonts add the icons used in pane headers, the status bar and git status. Download one from\n\
-             https://www.nerdfonts.com/font-downloads and unzip it into ~/.local/share/fonts, then run\n\
-             `fc-cache -f` and `paua setup` again. See docs/config/nerd-fonts.md."
+            "Nerd Fonts add the icons used in pane headers, the status bar and git status. `paua fonts list`\n\
+             shows the ones Paua can download for you (`paua fonts install VictorMono Ubuntu`); or get any\n\
+             from https://www.nerdfonts.com/font-downloads, unzip into ~/.local/share/fonts and run\n\
+             `fc-cache -f`. Then run `paua setup` again. See docs/config/nerd-fonts.md."
         )?;
         let options = vec![
             ("Use the system monospace font for now".to_owned(), Some(SYSTEM_MONOSPACE.to_owned())),
@@ -228,8 +295,8 @@ fn choose_fonts(
     if fonts.suggest_terminal().as_deref() != Some(PREFERRED_TERMINAL) || fonts.suggest_ui().as_deref() != Some(PREFERRED_UI) {
         writeln!(
             out,
-            "Tip: more fonts (e.g. {PREFERRED_TERMINAL}, {PREFERRED_UI}) are at https://www.nerdfonts.com/font-downloads:\n\
-             unzip into ~/.local/share/fonts, run `fc-cache -f`, then `paua setup` again."
+            "Tip: `paua fonts list` shows more Nerd Fonts to download (e.g. {PREFERRED_TERMINAL}, {PREFERRED_UI});\n\
+             or get any from https://www.nerdfonts.com/font-downloads. Then run `paua setup` again."
         )?;
     }
     let warn_unknown = |out: &mut dyn Write, f: &str| -> io::Result<()> {
@@ -299,13 +366,17 @@ pub fn run_with(
     opts: Options,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
-    families: &[String],
+    ops: &dyn FontOps,
     config_path: &Path,
     install: &dyn Fn() -> i32,
 ) -> io::Result<i32> {
     writeln!(out, "Paua setup")?;
-    let fonts = nerd_fonts(families);
-    let choices = choose_fonts(input, out, &fonts, families, opts.assume_yes)?;
+    let mut families = ops.installed_families();
+    if !opts.print_only {
+        offer_fonts(input, out, ops, opts, &mut families)?;
+    }
+    let fonts = nerd_fonts(&families);
+    let choices = choose_fonts(input, out, &fonts, &families, opts.assume_yes)?;
     let yaml = config_yaml(&choices);
 
     if opts.print_only {
@@ -367,12 +438,11 @@ pub fn run(opts: Options) -> i32 {
         eprintln!("paua setup is interactive. Use --yes to accept the suggestions, or --print to see the config.");
         return 2;
     }
-    let families = installed_families();
     let result = run_with(
         opts,
         &mut stdin.lock(),
         &mut io::stdout(),
-        &families,
+        &RealFonts,
         &crate::config::user_config_path(),
         &|| crate::install::install(crate::install::InstallOptions { assume_yes: true, no_config: true }),
     );
@@ -401,7 +471,7 @@ pub fn offer_after_install(assume_yes: bool) {
             .unwrap_or(false)
     };
     if run_it {
-        let _ = run(Options { assume_yes, print_only: false, offer_install: false });
+        let _ = run(Options { assume_yes, print_only: false, offer_install: false, download_fonts: false });
     }
 }
 
@@ -421,6 +491,7 @@ mod tests {
         "VictorMono Nerd Font",
         "VictorMono Nerd Font Mono",
         "VictorMono Nerd Font Propo",
+        "Symbols Nerd Font Mono",
     ];
 
     #[test]
@@ -457,10 +528,43 @@ mod tests {
         assert!(c.status_bar.font.family.is_none() && !plain.contains("status_bar"));
     }
 
+    /// Fonts without touching the system: reports `families`, and after an install reports
+    /// `after_install` (and records what was asked for).
+    struct FakeFonts {
+        families: Vec<String>,
+        after_install: Vec<String>,
+        installed: std::cell::RefCell<Vec<String>>,
+        fail: bool,
+    }
+
+    impl FakeFonts {
+        fn new(families: &[&str]) -> Self {
+            Self { families: fams(families), after_install: fams(families), installed: Default::default(), fail: false }
+        }
+    }
+
+    impl FontOps for FakeFonts {
+        fn installed_families(&self) -> Vec<String> {
+            if self.installed.borrow().is_empty() { self.families.clone() } else { self.after_install.clone() }
+        }
+
+        fn install(&self, keys: &[&str], _out: &mut dyn Write) -> Result<(), String> {
+            if self.fail {
+                return Err("no network".into());
+            }
+            self.installed.borrow_mut().extend(keys.iter().map(|k| (*k).to_owned()));
+            Ok(())
+        }
+    }
+
     fn run_script(input: &str, families: &[&str], path: &Path, opts: Options) -> (i32, String, i32) {
+        run_script_with(input, &FakeFonts::new(families), path, opts)
+    }
+
+    fn run_script_with(input: &str, fonts: &FakeFonts, path: &Path, opts: Options) -> (i32, String, i32) {
         let installs = std::cell::Cell::new(0);
         let mut out = Vec::new();
-        let code = run_with(opts, &mut input.as_bytes(), &mut out, &fams(families), path, &|| {
+        let code = run_with(opts, &mut input.as_bytes(), &mut out, fonts, path, &|| {
             installs.set(installs.get() + 1);
             0
         })
@@ -506,7 +610,7 @@ mod tests {
     fn without_nerd_fonts_it_explains_and_uses_system_fonts() {
         let dir = temp("none");
         let path = dir.join("config.yaml");
-        let (code, out, _) = run_script("\n", &["DejaVu Sans"], &path, Options::default());
+        let (code, out, _) = run_script("n\n\n", &["DejaVu Sans"], &path, Options::default()); // decline the download
         assert_eq!(code, 0);
         assert!(out.contains("No Nerd Fonts found") && out.contains("nerd-fonts.md"));
         let c: crate::config::UserConfig = serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -551,6 +655,61 @@ mod tests {
         assert!(!path.exists());
         let (_, _, installs) = run_script("", INSTALLED, &path, Options { assume_yes: true, offer_install: true, ..Default::default() });
         assert!(path.exists() && installs == 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_fonts_are_offered_for_download_and_used_afterwards() {
+        let dir = temp("offer");
+        let path = dir.join("config.yaml");
+        let mut fonts = FakeFonts::new(&["DejaVu Sans"]);
+        fonts.after_install = fams(INSTALLED);
+        // Enter takes the default (download); then Enter for each font question.
+        let (code, out, _) = run_script_with("\n\n\n", &fonts, &path, Options::default());
+        assert_eq!(code, 0, "{out}");
+        assert_eq!(*fonts.installed.borrow(), vec!["VictorMono", "Ubuntu", "Symbols"]);
+        assert!(out.contains("github.com/ryanoasis/nerd-fonts") && out.contains("SHA-256") && out.contains("licence"));
+        let c: crate::config::UserConfig = serde_yaml_ng::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(c.font.family, "VictorMono Nerd Font Propo"); // the freshly installed font is suggested
+        assert_eq!(c.status_bar.font.family.as_deref(), Some("Ubuntu Nerd Font"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nothing_is_downloaded_without_consent() {
+        let dir = temp("consent");
+        let path = dir.join("config.yaml");
+        // declined
+        let fonts = FakeFonts::new(&["DejaVu Sans"]);
+        run_script_with("n\n\n", &fonts, &path, Options::default());
+        assert!(fonts.installed.borrow().is_empty());
+        // --yes alone never downloads, but says how
+        let fonts = FakeFonts::new(&["DejaVu Sans"]);
+        let (_, out, _) = run_script_with("", &fonts, &path, Options { assume_yes: true, print_only: true, ..Default::default() });
+        assert!(fonts.installed.borrow().is_empty());
+        let (_, out2, _) = run_script_with("", &fonts, &path, Options { assume_yes: true, ..Default::default() });
+        assert!(fonts.installed.borrow().is_empty() && out2.contains("paua fonts install"), "{out} {out2}");
+        // --download-fonts is the explicit opt-in for scripts
+        let fonts = FakeFonts::new(&["DejaVu Sans"]);
+        run_script_with("", &fonts, &path, Options { assume_yes: true, download_fonts: true, print_only: false, offer_install: false });
+        assert_eq!(fonts.installed.borrow().len(), 3);
+        // when everything is present, nothing is offered
+        let fonts = FakeFonts::new(INSTALLED);
+        let (_, out, _) = run_script_with("\n\n", &fonts, &temp("present").join("c.yaml"), Options::default());
+        assert!(!out.contains("aren't installed yet"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_download_falls_back_gracefully() {
+        let dir = temp("fail");
+        let path = dir.join("config.yaml");
+        let mut fonts = FakeFonts::new(&["DejaVu Sans"]);
+        fonts.fail = true;
+        let (code, out, _) = run_script_with("\n\n", &fonts, &path, Options::default());
+        assert_eq!(code, 0);
+        assert!(out.contains("Couldn't install the fonts: no network") && out.contains("No Nerd Fonts found"));
+        assert!(path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

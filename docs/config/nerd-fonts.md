@@ -5,7 +5,13 @@ status and status bar widgets are most useful with a [Nerd Font](https://www.ner
 (a normal font patched with thousands of icon glyphs). The example config uses
 **VictorMono Nerd Font Propo** in the terminal and **Ubuntu Nerd Font** in the chrome.
 
-`paua setup` does the font part for you: it lists the Nerd Fonts it finds (`fc-list`), suggests
+`paua setup` does the font part for you, including **downloading** them: if VictorMono, Ubuntu and the
+Symbols-only icon font aren't installed it offers to fetch them from the official Nerd Fonts release
+(checked against its SHA-256 sums, installed with their licence files in
+`~/.local/share/fonts/NerdFonts/`), and `paua fonts list` / `paua fonts install <name>...` /
+`paua fonts uninstall <name>...` manage them yourself (JetBrainsMono, FiraCode, Hack and more).
+The Symbols-only font supplies the icons for any other font, so even a plain font shows them.
+It also lists the Nerd Fonts it finds (`fc-list`), suggests
 VictorMono Nerd Font Propo for the terminal and Ubuntu Nerd Font for the decorations when they are
 installed (otherwise the first suitable family), and writes your choices to the config. Run it again
 after installing fonts. The rest of this page explains the choices.

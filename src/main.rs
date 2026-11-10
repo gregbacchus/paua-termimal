@@ -2,6 +2,7 @@ mod app;
 mod cmdtimer;
 mod config;
 mod exec;
+mod fonts;
 mod frame;
 mod git;
 mod header;
@@ -13,6 +14,7 @@ mod session;
 mod statusbar;
 mod template;
 mod terminal;
+mod themes;
 
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
@@ -21,17 +23,20 @@ pub const APP_ID: &str = "io.github.gregbacchus.Paua";
 
 const USAGE: &str = "Paua, a colourful terminal.
 
-Usage: paua [setup | install | uninstall | --help]
+Usage: paua [setup | install | uninstall | fonts | themes | --help]
 
   setup        first-run wizard: finds your Nerd Fonts, asks which to use for the terminal and for
                the window decorations, writes ~/.config/paua/config.yaml, and offers to add Paua
                to the GNOME overview
                  --yes, -y   take the suggestions without asking
                  --print     show the config instead of writing it
+                 --download-fonts   also download the missing Nerd Fonts (never done without being asked)
   install      add the desktop entry and icons to ~/.local/share (shows Paua in the GNOME
                overview and gives the dock its icon); offers `setup` if there is no config yet
                  --yes, -y   run `setup` without asking     --no-config   don't offer it
   uninstall    remove the desktop entry and icons again
+  fonts        download Nerd Fonts from the official release (`paua fonts list`)
+  themes       list, preview and install terminal colour themes (see `paua themes`)
 ";
 
 fn main() -> glib::ExitCode {
@@ -45,11 +50,12 @@ fn main() -> glib::ExitCode {
         };
         let has = |names: &[&str]| flags.iter().any(|f| names.contains(&f.as_str()));
         match cmd {
-            "setup" if known(&["--yes", "-y", "--print"]) => {
+            "setup" if known(&["--yes", "-y", "--print", "--download-fonts"]) => {
                 return glib::ExitCode::from(setup::run(setup::Options {
                     assume_yes: has(&["--yes", "-y"]),
                     print_only: has(&["--print"]),
                     offer_install: true,
+                    download_fonts: has(&["--download-fonts"]),
                 }) as u8);
             }
             "install" if known(&["--yes", "-y", "--no-config"]) => {
@@ -58,6 +64,8 @@ fn main() -> glib::ExitCode {
                     no_config: has(&["--no-config"]),
                 }) as u8);
             }
+            "fonts" => return glib::ExitCode::from(fonts::cli(flags) as u8),
+            "themes" => return glib::ExitCode::from(themes::cli(flags) as u8),
             "uninstall" if known(&[]) => return glib::ExitCode::from(install::uninstall() as u8),
             "help" | "--help" | "-h" => {
                 print!("{USAGE}");

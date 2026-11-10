@@ -141,6 +141,8 @@ pub struct State {
     /// Modifier keys as last seen (for the open-link modifier).
     mods: Mods,
     url_style: UrlStyle,
+    /// Selection colour from the theme (None = a blend of the text colour into the background).
+    selection_bg: Option<Rgb>,
     url_re: Option<regex::Regex>,
     /// The link under the pointer while the open-link modifier is held.
     link: Option<links::Link>,
@@ -372,6 +374,23 @@ fn measure(
     let cell_h = (ph as f32 / pango::SCALE as f32).ceil();
     let ascent = probe.baseline() as f32 / pango::SCALE as f32;
     (fonts, cell_w, cell_h, ascent)
+}
+
+/// Set the emulator's default colours from a theme.
+pub(crate) fn apply_theme(term: &mut Terminal<'static, 'static>, theme: &crate::themes::ThemeColors) {
+    let _ = term.set_default_fg_color(Some(theme.fg.into()));
+    let _ = term.set_default_bg_color(Some(theme.bg.into()));
+    let _ = term.set_default_cursor_color(theme.cursor.map(Into::into));
+    // Start again from the standard palette, then set what the theme defines.
+    let _ = term.set_default_color_palette(None);
+    if !theme.palette.is_empty() {
+        if let Ok(mut p) = term.default_color_palette() {
+            for (i, c) in &theme.palette {
+                p.0[usize::from(*i)] = (*c).into();
+            }
+            let _ = term.set_default_color_palette(Some(p));
+        }
+    }
 }
 
 mod imp {
@@ -768,10 +787,11 @@ impl TermView {
     }
 
     /// Default foreground/background (what programs get for "default colour").
-    pub fn set_colors(&self, fg: Rgb, bg: Rgb) {
+    /// Apply a colour theme: text, background, cursor, selection and the palette.
+    pub fn set_theme(&self, theme: &crate::themes::ThemeColors) {
         if let Some(st) = self.imp().state.borrow_mut().as_mut() {
-            let _ = st.term.set_default_fg_color(Some(fg.into()));
-            let _ = st.term.set_default_bg_color(Some(bg.into()));
+            apply_theme(&mut st.term, theme);
+            st.selection_bg = theme.selection_bg;
         }
         self.queue_draw();
     }
@@ -848,6 +868,7 @@ impl TermView {
             mods: Mods::empty(),
             url_re: links::url_regex(&UrlStyle::default().schemes),
             url_style: UrlStyle::default(),
+            selection_bg: None,
             link: None,
             pending_url: None,
             wheel_accum: 0.0,

@@ -186,13 +186,14 @@ pub fn read_frame(
     rs: &mut RenderState<'static>,
     rows_it: &mut RowIterator<'static>,
     cells_it: &mut CellIterator<'static>,
+    selection: Option<Rgb>,
 ) -> Option<Frame> {
     let snapshot = rs.update(term).ok()?;
     let colors = snapshot.colors().ok()?;
     let fg_default = Rgb::from(colors.foreground);
     let bg_default = Rgb::from(colors.background);
     // Selection highlight: a muted blend of the default foreground into the background.
-    let selection_bg = bg_default.mix(fg_default, 0.28);
+    let selection_bg = selection.unwrap_or_else(|| bg_default.mix(fg_default, 0.28));
 
     let cursor = if snapshot.cursor_visible().unwrap_or(false) {
         match snapshot.cursor_viewport() {
@@ -521,7 +522,7 @@ pub fn draw(widget: &impl IsA<gtk::Widget>, st: &mut State, snap: &gtk::Snapshot
     let (w, h) = (widget.width() as f32, widget.height() as f32);
     let ctx = widget.pango_context();
 
-    let Some(mut frame) = read_frame(&st.term, &mut st.rs, &mut st.rows_it, &mut st.cells_it) else {
+    let Some(mut frame) = read_frame(&st.term, &mut st.rs, &mut st.rows_it, &mut st.cells_it, st.selection_bg) else {
         return;
     };
 
@@ -536,7 +537,7 @@ pub fn draw(widget: &impl IsA<gtk::Widget>, st: &mut State, snap: &gtk::Snapshot
     let mut extra_row = if st.frac > 0.0 {
         st.term
             .scroll_viewport(libghostty_vt::terminal::ScrollViewport::Delta(1));
-        let below = read_frame(&st.term, &mut st.rs, &mut st.rows_it, &mut st.cells_it)
+        let below = read_frame(&st.term, &mut st.rs, &mut st.rows_it, &mut st.cells_it, st.selection_bg)
             .and_then(|f| f.rows.into_iter().last());
         st.term
             .scroll_viewport(libghostty_vt::terminal::ScrollViewport::Delta(-1));
@@ -692,6 +693,26 @@ mod tests {
     //!   PAUA_PNG_DIR=/some/dir cargo test render_sample -- --ignored
     use super::*;
     use gtk::{gsk, graphene};
+
+    /// A theme's palette reaches the cells the program draws with ANSI colours, and a later theme
+    /// without those entries goes back to the standard palette.
+    #[test]
+    fn themes_change_the_palette_colours_cells_use() {
+        let mut term = Terminal::new(TerminalOptions { cols: 20, rows: 3, max_scrollback: 10 }).unwrap();
+        let (mut rs, mut rows_it, mut cells_it) =
+            (RenderState::new().unwrap(), RowIterator::new().unwrap(), CellIterator::new().unwrap());
+        let theme = crate::themes::builtin("nord", true).unwrap();
+        crate::terminal::apply_theme(&mut term, &theme);
+        term.vt_write(b"\x1b[31mR\x1b[0m\x1b[44mB\x1b[0m");
+        let f = read_frame(&term, &mut rs, &mut rows_it, &mut cells_it, theme.selection_bg).unwrap();
+        assert_eq!(f.rows[0][0].fg, Rgb(0xbf, 0x61, 0x6a)); // nord red
+        assert_eq!(f.rows[0][1].bg, Some(Rgb(0x81, 0xa1, 0xc1))); // nord blue
+        assert_eq!((f.fg, f.bg), (theme.fg, theme.bg));
+        // The default theme sets no palette: the standard colours come back.
+        crate::terminal::apply_theme(&mut term, &crate::themes::builtin("paua", true).unwrap());
+        let f = read_frame(&term, &mut rs, &mut rows_it, &mut cells_it, None).unwrap();
+        assert_ne!(f.rows[0][0].fg, Rgb(0xbf, 0x61, 0x6a));
+    }
     use libghostty_vt::{
         RenderState, Terminal, TerminalOptions,
         render::{CellIterator, RowIterator},
@@ -742,7 +763,7 @@ mod tests {
 
         let (mut rs, mut rows_it, mut cells_it) =
             (RenderState::new().unwrap(), RowIterator::new().unwrap(), CellIterator::new().unwrap());
-        let mut frame = read_frame(&term, &mut rs, &mut rows_it, &mut cells_it).unwrap();
+        let mut frame = read_frame(&term, &mut rs, &mut rows_it, &mut cells_it, None).unwrap();
         if let Ok(q) = std::env::var("PAUA_FIND") {
             let lines = super::super::search::screen_lines(&term);
             let opts = super::super::search::FindOptions { query: q, ..Default::default() };

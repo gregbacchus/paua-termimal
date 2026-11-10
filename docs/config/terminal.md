@@ -5,6 +5,9 @@
 | `terminal.scrollback` | integer | `10000` | Lines of scrollback per terminal. **New terminals only** (panes created after the change). |
 | `terminal.shell` | string (path) | unset (`$SHELL`) | The program to run in a new pane, e.g. `/usr/local/bin/nu`. **New terminals only.** |
 
+Colours: the terminal's colour theme (`terminal.theme`) and its adjustments (`terminal.colors`) are on
+the [themes page](themes.md).
+
 ```yaml
 terminal:
   scrollback: 10000

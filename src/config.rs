@@ -70,7 +70,7 @@ impl<'de> Deserialize<'de> for Dim {
 }
 
 /// `#rrggbb` / `#rgb` (the `#` is optional).
-fn parse_hex(s: &str) -> Result<Rgb, String> {
+pub fn parse_hex(s: &str) -> Result<Rgb, String> {
     let h = s.trim().trim_start_matches('#');
     let bad = || format!("invalid colour {s:?} (use #rrggbb)");
     let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).map_err(|_| bad());
@@ -800,6 +800,65 @@ pub struct TerminalConfig {
     pub scroll_to_bottom_button: ScrollButtonConfig,
     /// Following URLs and hyperlinks in the output with a modifier + click.
     pub urls: UrlsConfig,
+    /// The colour theme: a name for both colour schemes, or `{ dark, light }`.
+    pub theme: ThemeChoice,
+    /// Colours that adjust the theme.
+    pub colors: ColorsConfig,
+}
+
+/// `terminal.theme`: one name for both modes, or a name per mode.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeChoice {
+    pub dark: Option<String>,
+    pub light: Option<String>,
+}
+
+impl ThemeChoice {
+    /// The theme name for a mode; unset modes use the default theme.
+    pub fn name_for(&self, dark: bool) -> &str {
+        let n = if dark { &self.dark } else { &self.light };
+        n.as_deref().unwrap_or(crate::themes::DEFAULT_THEME)
+    }
+}
+
+impl Default for ThemeChoice {
+    fn default() -> Self {
+        Self { dark: None, light: None }
+    }
+}
+
+impl<'de> Deserialize<'de> for ThemeChoice {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            One(String),
+            Both {
+                #[serde(default)]
+                dark: Option<String>,
+                #[serde(default)]
+                light: Option<String>,
+            },
+        }
+        Ok(match Raw::deserialize(d)? {
+            Raw::One(n) => Self { dark: Some(n.clone()), light: Some(n) },
+            Raw::Both { dark, light } => Self { dark, light },
+        })
+    }
+}
+
+/// Terminal colours (also the format of a YAML theme file). Each is a colour or `{ dark, light }`.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, serde(deny_unknown_fields))] // tests catch typos in the examples
+#[serde(default)]
+pub struct ColorsConfig {
+    pub foreground: Option<ThemedColor>,
+    pub background: Option<ThemedColor>,
+    pub cursor: Option<ThemedColor>,
+    pub selection_background: Option<ThemedColor>,
+    /// Palette entries by index: 0-7 black red green yellow blue magenta cyan white, 8-15 their
+    /// bright versions, 16-255 the 256-colour palette.
+    pub palette: std::collections::BTreeMap<u8, ThemedColor>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1031,6 +1090,8 @@ impl Default for TerminalConfig {
             scrollbar: ScrollbarConfig::default(),
             scroll_to_bottom_button: ScrollButtonConfig::default(),
             urls: UrlsConfig::default(),
+            theme: ThemeChoice::default(),
+            colors: ColorsConfig::default(),
         }
     }
 }
@@ -1846,6 +1907,7 @@ status_bar:
         add("terminal.scrollbar", field_names::<ScrollbarConfig>());
         add("terminal.scroll_to_bottom_button", field_names::<ScrollButtonConfig>());
         add("terminal.urls", field_names::<UrlsConfig>());
+        add("terminal.colors", field_names::<ColorsConfig>());
         add("session", field_names::<SessionConfig>());
         for kind in ["root", "sudo", "ssh", "container", "remote", "multiplexer"] {
             add(&format!("session.{kind}"), field_names::<SessionKindConfig>());

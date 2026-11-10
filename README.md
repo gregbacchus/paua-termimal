@@ -36,9 +36,11 @@ paua                # run it
 **`paua setup` is the primary first step.** It:
 
 1. looks for the **Nerd Fonts** you have installed (Paua's icons in pane headers, the status bar
-   and git status need one). If there are none (or your favourites are missing) it tells you where to
-   get them: download from <https://www.nerdfonts.com/font-downloads>, unzip into
-   `~/.local/share/fonts`, run `fc-cache -f` and run `paua setup` again;
+   and git status need one). If the ones it suggests are missing (Victor Mono for the terminal,
+   Ubuntu for the decorations, plus an icons-only fallback) it **offers to download them for you**
+   (about 9 MB), from the official Nerd Fonts release, checked against its published SHA-256 sums and
+   installed with their licence files in `~/.local/share/fonts/NerdFonts`. Nothing is downloaded
+   unless you say yes (or pass `--download-fonts`);
 2. asks which font to use for the **terminal** (a `Propo` or `Mono` variant is best, for example
    VictorMono Nerd Font Propo) and which for the **window decorations** (pane headers and status
    bar, for example Ubuntu Nerd Font), suggesting sensible defaults: just press Enter;
@@ -46,8 +48,9 @@ paua                # run it
    existing config without backing it up);
 4. offers to add Paua to the GNOME overview and dock (the same as `paua install`).
 
-`paua setup --yes` takes the suggestions without asking, and `paua setup --print` shows the config
-without writing it. Run it again whenever you install new fonts. Everything else is optional tuning;
+`paua setup --yes` takes the suggestions without asking (it never downloads anything on its own),
+and `paua setup --print` shows the config without writing it. `paua fonts list` / `paua fonts install
+JetBrainsMono ...` download other Nerd Fonts any time. Run it again whenever you install new fonts. Everything else is optional tuning;
 see the [configuration docs](docs/config/README.md).
 
 The brew package is a prebuilt binary that uses the **system** GTK 4 and libadwaita (Ubuntu 24.04 or
@@ -304,6 +307,16 @@ modified, deleted, renamed, untracked and stashed; ahead / behind use their own 
 Pull / Push buttons; the sync button next to it pulls (fast-forward only) then pushes, like VS Code.
 Failures (a dirty tree blocking a switch, a diverged branch) show git's message as a toast. Icons,
 format, counts, timeouts and the sync button are under `status_bar.git`.
+
+## Colour themes
+
+Terminal themes (text, background, cursor, selection and the 16 ANSI colours) can be set separately
+for **light and dark**: `terminal: { theme: { dark: "Tokyo Night", light: "Tokyo Night Day" } }`.
+Built in: `paua` (default), `nord`, `dracula`, `solarized`, `gruvbox`, `one`, `catppuccin`,
+`tokyo-night`. **`paua themes install` downloads ~900 community themes** (the iTerm2-Color-Schemes
+collection, the same one Ghostty uses), `paua themes list` shows them and `paua themes preview NAME`
+shows one in your terminal. Ghostty-format theme files, and an existing Ghostty installation's
+themes, work as they are. Details: [themes docs](docs/config/themes.md).
 
 ## Clickable links
 

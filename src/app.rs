@@ -21,6 +21,7 @@ use crate::palette::{self, PaletteItem};
 use crate::searchbox::SearchBox;
 use crate::session::{self, Kind, SessionInfo};
 use crate::statusbar::{self, StatusBar};
+use crate::themes;
 use crate::terminal::{FontWeights, Rgb, TermConfig, TermView};
 
 const WINDOW_TITLE: &str = "Paua";
@@ -88,15 +89,6 @@ pub struct App {
     dir_monitor: RefCell<Option<gio::FileMonitor>>,
     user_gen: Cell<u32>,
     dir_gen: Cell<u32>,
-}
-
-/// Terminal colours matching the pane card colours in style.css.
-fn terminal_colors(dark: bool) -> (Rgb, Rgb) {
-    if dark {
-        (Rgb(0xd4, 0xd4, 0xd8), Rgb(0x1e, 0x1e, 0x22))
-    } else {
-        (Rgb(0x2e, 0x2e, 0x33), Rgb(0xfb, 0xfb, 0xfc))
-    }
 }
 
 /// Header text for `{session}` and one badge `(text, css kind)` per detected session.
@@ -233,12 +225,12 @@ impl App {
                     for win in app.all_wins() {
                         apply_mode(&win.window, sm.is_dark());
                     }
-                    let (fg, bg) = terminal_colors(sm.is_dark());
+                    let (theme, _) = themes::resolve(&app.cfg.borrow().terminal, sm.is_dark());
                     let (bar, btn) = scroll_styles(&app.cfg.borrow());
                     let find = app.cfg.borrow().search.style(sm.is_dark());
                     let urls = app.cfg.borrow().terminal.urls.style(sm.is_dark());
                     for p in app.panes.borrow().iter() {
-                        p.term.set_colors(fg, bg);
+                        p.term.set_theme(&theme);
                         p.term.set_scroll_style(bar, btn);
                         p.term.set_find_style(find);
                         p.term.set_url_style(urls.clone());
@@ -262,6 +254,9 @@ impl App {
 
         if let Some(e) = load_error {
             app.toast(&format!("Config error: {e}"));
+        }
+        if let (_, Some(warning)) = themes::resolve(&app.cfg.borrow().terminal, adw::StyleManager::default().is_dark()) {
+            app.toast(&format!("Config error: {warning}"));
         }
 
         win.window.present();
@@ -542,8 +537,10 @@ impl App {
         let mut term_cfg = self.term_config();
         term_cfg.cwd = Some(cwd.clone());
         let term = TermView::new(term_cfg);
-        let (fg, bg) = terminal_colors(adw::StyleManager::default().is_dark());
-        term.set_colors(fg, bg);
+        {
+            let (theme, _) = themes::resolve(&self.cfg.borrow().terminal, adw::StyleManager::default().is_dark());
+            term.set_theme(&theme);
+        }
         {
             let cfg = self.cfg.borrow();
             term.set_inactive_style(cfg.panes.inactive.style(), cfg.panes.inactive.fade_ms);
@@ -1470,6 +1467,14 @@ impl App {
                 }
             }
         }
+        // The pane cards (and the padding around the text) take the terminal theme's colours.
+        for (mode, dark) in [("dark", true), ("light", false)] {
+            let (t, _) = themes::resolve(&cfg.terminal, dark);
+            css += &format!(
+                "window.{mode} .pane {{ background-color: rgb({}, {}, {}); color: rgb({}, {}, {}); }}\n",
+                t.bg.0, t.bg.1, t.bg.2, t.fg.0, t.fg.1, t.fg.2
+            );
+        }
         css += &statusbar::css(&cfg.status_bar);
         self.header_css.load_from_string(&css);
     }
@@ -1550,6 +1555,7 @@ impl App {
                 let (bar, btn) = scroll_styles(&cfg);
                 p.term.set_scroll_style(bar, btn);
                 p.term.set_session_detect(cfg.session.detect, cfg.session.poll_ms);
+                p.term.set_theme(&themes::resolve(&cfg.terminal, adw::StyleManager::default().is_dark()).0);
                 p.term.set_find_style(cfg.search.style(adw::StyleManager::default().is_dark()));
                 p.term.set_url_style(cfg.terminal.urls.style(adw::StyleManager::default().is_dark()));
                 p.term.set_command_timer(cfg.panes.header.command_timer.settings());
@@ -1557,6 +1563,9 @@ impl App {
             }
         }
         self.apply_header_css();
+        if let (_, Some(warning)) = themes::resolve(&self.cfg.borrow().terminal, adw::StyleManager::default().is_dark()) {
+            self.toast(&format!("Config error: {warning}"));
+        }
         for win in self.all_wins() {
             win.status.configure(&self.cfg.borrow().status_bar);
             self.refresh_status(&win);

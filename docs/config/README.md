@@ -27,6 +27,7 @@ point with every option set is [`examples/config.yaml`](../../examples/config.ya
 | `panes` | [Panes](panes.md) |
 | `terminal` | [Terminal](terminal.md) |
 | `session` | [Sessions](session.md) |
+| `terminal.theme`, `terminal.colors` | [Themes](themes.md) |
 | `search` | [Search and palette](search-and-palette.md) |
 | `palette` | [Search and palette](search-and-palette.md) |
 | `status_bar` | [Status bar](status-bar.md) |
