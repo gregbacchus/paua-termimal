@@ -490,3 +490,11 @@ PAUA_PNG_DIR=/tmp/paua-render PAUA_SCALE=1 GSK_RENDERER=gl cargo test render_sam
 - The icon is found via `CARGO_MANIFEST_DIR`, which is fine for development. For packaging, install
   the SVG to `share/icons/hicolor/scalable/apps/` and add a `.desktop` file whose name matches the
   app id (`io.github.gregbacchus.Paua`), so GNOME also shows it in the dock and overview.
+
+## Licence
+
+Paua is released under the [MIT licence](LICENSE); the licences of the third-party code compiled into the
+binary are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). It uses [libghostty-vt](https://github.com/ghostty-org/ghostty)
+(MIT) and Rust crates under MIT, Apache-2.0 and similar permissive licences, and links GTK 4 and libadwaita
+(LGPL) dynamically from your system. Fonts and the optional community colour themes are downloaded from their
+own projects on request and are not part of Paua; each keeps its own licence.

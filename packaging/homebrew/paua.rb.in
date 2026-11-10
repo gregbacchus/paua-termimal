@@ -5,6 +5,8 @@ class Paua < Formula
   homepage "https://github.com/@REPO@"
   version "@VERSION@"
 
+  license "MIT"
+
   depends_on :linux
 
   on_intel do

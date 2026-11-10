@@ -2,6 +2,9 @@
 name = "paua"
 version = "0.2.6"
 edition = "2024"
+license = "MIT"
+description = "A colourful terminal for GNOME, built on libghostty-vt"
+repository = "https://github.com/gregbacchus/paua-termimal"
 
 [dependencies]
 adw = { version = "0.9.2", package = "libadwaita", features = ["v1_5"] }

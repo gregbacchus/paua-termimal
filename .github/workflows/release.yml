@@ -50,7 +50,8 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           name="paua-${version}-linux-${{ matrix.arch }}"
           mkdir -p dist
-          tar -C target/release -czf "dist/${name}.tar.gz" paua
+          cp LICENSE THIRD-PARTY-NOTICES.md target/release/
+          tar -C target/release -czf "dist/${name}.tar.gz" paua LICENSE THIRD-PARTY-NOTICES.md
           (cd dist && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256")
 
       - uses: actions/upload-artifact@v4

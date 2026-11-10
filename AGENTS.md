@@ -31,6 +31,25 @@ Also: every config struct has `#[cfg_attr(test, serde(deny_unknown_fields))]` (r
 ignore unknown keys on purpose so old and new files keep loading; test builds reject them so the
 example and docs can't hide typos). Keep that attribute on new structs.
 
+## ⚠️ Rule: keep THIRD-PARTY-NOTICES.md up to date
+
+`THIRD-PARTY-NOTICES.md` reproduces the licences of everything compiled into the binary (the Rust
+crates and libghostty-vt with its bundled simdutf, Highway, uucode and Zig runtime), as their licences
+require. It is **generated, never edited by hand**:
+
+```bash
+PATH=$HOME/.local/zig:$PATH cargo build                    # fetches Ghostty's source and Zig packages
+PATH=$HOME/.local/zig:$PATH python3 scripts/update-third-party-notices.py          # regenerate
+PATH=$HOME/.local/zig:$PATH python3 scripts/update-third-party-notices.py --check  # is it current?
+```
+
+**Whenever you add, remove or update a dependency (`Cargo.toml` / `Cargo.lock`), or update
+libghostty-vt, regenerate it and commit the result in the same change.** Run `--check` before every
+release tag (the release tarball includes the file). If the script fails because a component's licence
+can't be found, fix the script (`scripts/update-third-party-notices.py`) rather than leaving the file
+stale. Do not add a dependency whose licence is not permissive (MIT / Apache-2.0 / BSD / ISC /
+Unlicense / Zlib / BSL) without asking: Paua is MIT and ships a single binary.
+
 ## Build, run, test
 
 ```bash
@@ -44,7 +63,7 @@ System packages: `build-essential pkg-config libgtk-4-dev libadwaita-1-dev` (Ubu
 re-verifies page structures on every hyperlink operation, which made nushell's `ls` output get slower
 every run. Do not remove it.
 
-Releases: bump `version` in `Cargo.toml`, tag `vX.Y.Z`, push the tag; `.github/workflows/release.yml`
+Releases: bump `version` in `Cargo.toml` (this updates `Cargo.lock`: commit both), run the notices `--check` (above), tag `vX.Y.Z`, push the tag; `.github/workflows/release.yml`
 builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the Homebrew tap
 (`packaging/homebrew/paua.rb.in`). CI is `.github/workflows/ci.yml`.
 
@@ -69,6 +88,7 @@ builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the
 | `src/frame.rs`, `src/style.css` | Animated frame colour; the stylesheet |
 | `assets/icons/` | App icon (PNGs 16 to 512) and symbolic action icons |
 | `docs/` | Configuration documentation (see the rule above) |
+| `LICENSE`, `THIRD-PARTY-NOTICES.md`, `scripts/update-third-party-notices.py` | Paua's MIT licence; the generated licences of bundled third-party code (see the rule above) and its generator |
 | `examples/` | `config.yaml` (full example), `paua.yaml` (per-directory example) |
 | `packaging/homebrew/`, `.github/workflows/` | Homebrew formula template, CI and release |
 
