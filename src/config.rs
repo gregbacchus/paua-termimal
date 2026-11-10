@@ -798,6 +798,42 @@ pub struct TerminalConfig {
     /// jumps back to the latest output while scrolled up.
     #[serde(deserialize_with = "button_or_bool")]
     pub scroll_to_bottom_button: ScrollButtonConfig,
+    /// Following URLs and hyperlinks in the output with a modifier + click.
+    pub urls: UrlsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(test, serde(deny_unknown_fields))] // tests catch typos in the examples
+#[serde(default)]
+pub struct UrlsConfig {
+    pub enabled: bool,
+    /// The key to hold while clicking: `ctrl`, `alt` or `ctrl_shift`.
+    pub modifier: crate::terminal::UrlModifier,
+    /// Only links with these schemes are detected and opened.
+    pub schemes: Vec<String>,
+    /// Also follow explicit OSC 8 hyperlinks (programs such as nushell's `ls`, `ls --hyperlink`...).
+    pub osc8: bool,
+    /// Underline colour while hovering. Unset = the text colour.
+    pub color: Option<ThemedTint>,
+}
+
+impl Default for UrlsConfig {
+    fn default() -> Self {
+        let d = crate::terminal::UrlStyle::default();
+        Self { enabled: d.enabled, modifier: d.modifier, schemes: d.schemes, osc8: d.osc8, color: None }
+    }
+}
+
+impl UrlsConfig {
+    pub fn style(&self, dark: bool) -> crate::terminal::UrlStyle {
+        crate::terminal::UrlStyle {
+            enabled: self.enabled,
+            modifier: self.modifier,
+            schemes: self.schemes.clone(),
+            osc8: self.osc8,
+            color: self.color.and_then(|c| c.resolve(dark)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -994,6 +1030,7 @@ impl Default for TerminalConfig {
             shell: None,
             scrollbar: ScrollbarConfig::default(),
             scroll_to_bottom_button: ScrollButtonConfig::default(),
+            urls: UrlsConfig::default(),
         }
     }
 }
@@ -1808,6 +1845,7 @@ status_bar:
         add("terminal", field_names::<TerminalConfig>());
         add("terminal.scrollbar", field_names::<ScrollbarConfig>());
         add("terminal.scroll_to_bottom_button", field_names::<ScrollButtonConfig>());
+        add("terminal.urls", field_names::<UrlsConfig>());
         add("session", field_names::<SessionConfig>());
         for kind in ["root", "sudo", "ssh", "container", "remote", "multiplexer"] {
             add(&format!("session.{kind}"), field_names::<SessionKindConfig>());

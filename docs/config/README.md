@@ -1,5 +1,9 @@
 # Configuration overview
 
+**Start with `paua setup`.** It detects your installed Nerd Fonts, asks which to use for the terminal
+and for the window decorations, and writes a minimal `config.yaml` with just those choices. This
+section documents everything you can then tune by hand.
+
 Paua reads one YAML file, plus optional per-directory files.
 
 | File | Purpose |

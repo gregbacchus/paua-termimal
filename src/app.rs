@@ -236,10 +236,12 @@ impl App {
                     let (fg, bg) = terminal_colors(sm.is_dark());
                     let (bar, btn) = scroll_styles(&app.cfg.borrow());
                     let find = app.cfg.borrow().search.style(sm.is_dark());
+                    let urls = app.cfg.borrow().terminal.urls.style(sm.is_dark());
                     for p in app.panes.borrow().iter() {
                         p.term.set_colors(fg, bg);
                         p.term.set_scroll_style(bar, btn);
                         p.term.set_find_style(find);
+                        p.term.set_url_style(urls.clone());
                     }
                     app.refresh_frames();
                 }
@@ -550,6 +552,7 @@ impl App {
             term.set_scroll_style(bar, btn);
             term.set_session_detect(cfg.session.detect, cfg.session.poll_ms);
             term.set_find_style(cfg.search.style(adw::StyleManager::default().is_dark()));
+            term.set_url_style(cfg.terminal.urls.style(adw::StyleManager::default().is_dark()));
             term.set_command_timer(cfg.panes.header.command_timer.settings());
             header.apply_style(&cfg.panes.header, &cfg.font.family);
         }
@@ -1548,6 +1551,7 @@ impl App {
                 p.term.set_scroll_style(bar, btn);
                 p.term.set_session_detect(cfg.session.detect, cfg.session.poll_ms);
                 p.term.set_find_style(cfg.search.style(adw::StyleManager::default().is_dark()));
+                p.term.set_url_style(cfg.terminal.urls.style(adw::StyleManager::default().is_dark()));
                 p.term.set_command_timer(cfg.panes.header.command_timer.settings());
                 p.header.apply_style(&cfg.panes.header, &cfg.font.family);
             }

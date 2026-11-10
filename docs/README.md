@@ -1,12 +1,16 @@
 # Paua documentation
 
+**New here? Run `paua setup`**: it finds your Nerd Fonts, asks which to use for the terminal and the
+window decorations, and writes a minimal config (see the [README](../README.md#get-started)).
+Everything below is optional tuning.
+
 | Page | What it covers |
 |---|---|
 | [Configuration overview](config/README.md) | Where the config lives, loading, live reload, errors, precedence |
 | [Value types](config/value-types.md) | Colours, durations, sizes, font weights, padding, templates, YAML escapes |
 | [General: `watch`, `font`, `window`](config/general.md) | Reloading, the terminal font, window size and colour |
 | [Panes: `panes`](config/panes.md) | Padding, inactive-pane look, pane headers, command timer, bell flash |
-| [Terminal: `terminal`](config/terminal.md) | Scrollback, shell, scrollbar, scroll-to-bottom button |
+| [Terminal: `terminal`](config/terminal.md) | Scrollback, shell, scrollbar, scroll-to-bottom button, clickable URLs |
 | [Sessions: `session`](config/session.md) | Detecting ssh / sudo / containers / other hosts, badges and tints |
 | [Search and palette: `search`, `palette`](config/search-and-palette.md) | Find in output, command palette, custom commands |
 | [Status bar: `status_bar`](config/status-bar.md) | Widgets, priorities, `exec`, git, templates, actions |

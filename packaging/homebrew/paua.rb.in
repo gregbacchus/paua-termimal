@@ -26,8 +26,8 @@ class Paua < Formula
       Paua uses the system GTK 4 and libadwaita (Ubuntu 24.04 or newer, or a similar GNOME distro):
         sudo apt install libgtk-4-1 libadwaita-1-0
 
-      To add it to the GNOME overview with its icon, run once (and again after moving brew):
-        paua install
+      First run: pick your fonts, write a config and add Paua to the GNOME overview with
+        paua setup
     EOS
   end
 

@@ -1,26 +1,60 @@
-# Paua - Colorful Shell
+# Paua: a colourful terminal
 
-*Paua* (te reo Māori for abalone / pāua shell: iridescent and colourful) is a colourful terminal. It is a native Rust GTK4 + libadwaita app for GNOME with a custom-coloured window frame
+![Paua: two panes with a green window frame, running nushell with a starship prompt](docs/images/screenshot.png)
+
+*The screenshot shows Paua running [nushell](https://www.nushell.sh/) with a
+[starship](https://starship.rs/) prompt: two panes, a custom-coloured window frame, the pane headers
+and the git / Rust / clock status bar.*
+
+*Paua* is te reo Māori for the abalone shell, famous for its iridescent colours. A pāua is a
+colourful *shell*, but this one is a colourful **terminal** :)
+
+Paua is a native Rust GTK4 + libadwaita app for GNOME with a custom-coloured window frame
 (VS Code-like): app icon, menu bar and controls in the title bar, a status bar, and rounded content
 panes separated by draggable dividers. No web view; GTK's CSS is only used for styling.
+
+**Built on [Ghostty](https://ghostty.org/).** The terminal itself (escape-sequence parsing, the
+screen and scrollback, selection, mouse and key encoding) is
+[libghostty-vt](https://github.com/ghostty-org/ghostty), the embeddable terminal library from Ghostty;
+Paua adds the GTK interface, its own GPU-friendly renderer (font ligatures, smooth scrolling), panes,
+the status bar and configuration around it. Truecolor and robust terminal compatibility come from
+the Ghostty engine.
 
 **Documentation:** every configuration option is documented in [`docs/`](docs/README.md) (start with
 [`docs/config/README.md`](docs/config/README.md)); a complete example is
 [`examples/config.yaml`](examples/config.yaml). Contributors and coding agents: see [`AGENTS.md`](AGENTS.md).
 
-## Install with Homebrew (Linux)
+## Get started
 
 ```bash
 brew tap gregbacchus/tap
 brew install paua
-paua install        # adds Paua to the GNOME overview, with its icon
+paua setup          # start here: the first-run wizard
 paua                # run it
 ```
 
-The package is a prebuilt binary that uses the **system** GTK 4 and libadwaita (Ubuntu 24.04 or
+**`paua setup` is the primary first step.** It:
+
+1. looks for the **Nerd Fonts** you have installed (Paua's icons in pane headers, the status bar
+   and git status need one). If there are none (or your favourites are missing) it tells you where to
+   get them: download from <https://www.nerdfonts.com/font-downloads>, unzip into
+   `~/.local/share/fonts`, run `fc-cache -f` and run `paua setup` again;
+2. asks which font to use for the **terminal** (a `Propo` or `Mono` variant is best, for example
+   VictorMono Nerd Font Propo) and which for the **window decorations** (pane headers and status
+   bar, for example Ubuntu Nerd Font), suggesting sensible defaults: just press Enter;
+3. writes a small `~/.config/paua/config.yaml` containing only those choices (it never overwrites an
+   existing config without backing it up);
+4. offers to add Paua to the GNOME overview and dock (the same as `paua install`).
+
+`paua setup --yes` takes the suggestions without asking, and `paua setup --print` shows the config
+without writing it. Run it again whenever you install new fonts. Everything else is optional tuning;
+see the [configuration docs](docs/config/README.md).
+
+The brew package is a prebuilt binary that uses the **system** GTK 4 and libadwaita (Ubuntu 24.04 or
 newer, x86_64 or aarch64). If they are missing: `sudo apt install libgtk-4-1 libadwaita-1-0`.
 Update with `brew upgrade paua`; remove with `paua uninstall` followed by `brew uninstall paua`.
-To build from source instead, see below.
+To build from source instead, see below (then run `paua setup` from `target/release/paua` or
+`cargo run -- setup`).
 
 ## Build from source: prerequisites (Ubuntu / GNOME)
 
@@ -193,7 +227,7 @@ output with many OSC 8 links (nushell's `ls`/`la` link every file name) got slow
 
 ## Releasing and the Homebrew tap
 
-Installing is covered [above](#install-with-homebrew-linux); this is how a release is made.
+Installing is covered [above](#get-started); this is how a release is made.
 
 **CI** (`.github/workflows/ci.yml`) builds and tests every push and pull request.
 **Releasing** (`.github/workflows/release.yml`): bump `version` in `Cargo.toml`, commit, then
@@ -220,7 +254,9 @@ paua uninstall           # remove them again
 `paua install` writes `applications/io.github.gregbacchus.Paua.desktop` (launching the binary you ran
 it from) and the icon at 16 to 512 px (built into the binary), then refreshes the icon and desktop
 caches if the tools are there. After that Paua shows in the GNOME overview with its icon and the
-dock groups its windows under it. Run it again if you move the binary.
+dock groups its windows under it. Run it again if you move the binary. If there is no config file yet
+it offers to run [`paua setup`](#get-started) (`--yes` accepts, `--no-config` skips the offer;
+nothing is asked when it isn't running in a terminal).
 
 ## Status bar
 
@@ -268,6 +304,15 @@ modified, deleted, renamed, untracked and stashed; ahead / behind use their own 
 Pull / Push buttons; the sync button next to it pulls (fast-forward only) then pushes, like VS Code.
 Failures (a dirty tree blocking a switch, a diverged branch) show git's message as a toast. Icons,
 format, counts, timeouts and the sync button are under `status_bar.git`.
+
+## Clickable links
+
+Hold **Ctrl** and hover a URL: it is underlined and the pointer becomes a hand; **Ctrl+click** opens
+it in your default application. Plain URLs in the output (also when they wrap over several lines)
+and explicit OSC 8 hyperlinks (such as the file names in nushell's `ls`) both work. Only `http`,
+`https`, `ftp`, `ftps`, `file` and `mailto` links are opened by default. In programs that use the
+mouse (vim, htop) hold **Ctrl+Shift** instead. Options (modifier key, schemes, underline colour)
+are under `terminal.urls` in the [terminal docs](docs/config/terminal.md#terminalurls).
 
 ## Menus and shortcuts
 

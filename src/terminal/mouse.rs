@@ -15,6 +15,8 @@ use libghostty_vt::{
 };
 use libghostty_vt::selection::gesture::Geometry;
 
+use super::links::{self, Link, UrlModifier};
+use super::render::read_frame;
 use super::{State, scrollbar};
 
 /// What the current mouse button press is doing.
@@ -126,9 +128,80 @@ impl State {
         changed
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Links (URLs and OSC 8 hyperlinks): followed with a modifier held
+    // ---------------------------------------------------------------------------------------
+
+    /// Is the open-link modifier held, and is the pointer free to hover a link (not dragging, not
+    /// over the scrollbar, and the program isn't getting the mouse)?
+    pub fn link_active(&self) -> bool {
+        let held = match self.url_style.modifier {
+            UrlModifier::Ctrl => self.mods.contains(Mods::CTRL),
+            UrlModifier::Alt => self.mods.contains(Mods::ALT),
+            UrlModifier::CtrlShift => self.mods.contains(Mods::CTRL | Mods::SHIFT),
+        };
+        self.url_style.enabled
+            && held
+            && self.dragging == Dragging::None
+            && !self.bar_hot
+            && !self.btn_hover
+            && !self.mouse_reporting(self.mods)
+    }
+
+    /// The link under the pointer right now (reads the visible rows; only call while active).
+    fn compute_link(&mut self) -> Option<Link> {
+        let (x, y) = self.pointer;
+        let (w, h) = (f64::from(self.px_w), f64::from(self.px_h));
+        let (pl, pt) = (f64::from(self.pad.left), f64::from(self.pad.top));
+        if x < pl || y < pt || x >= w - f64::from(self.pad.right) || y >= h - f64::from(self.pad.bottom) {
+            return None;
+        }
+        let (col, row) = self.cell_at(x, y);
+        if self.url_style.osc8 {
+            if let Some(l) = self.osc8_link(col, row) {
+                return Some(l);
+            }
+        }
+        let re = self.url_re.as_ref()?;
+        let frame = read_frame(&self.term, &mut self.rs, &mut self.rows_it, &mut self.cells_it)?;
+        links::find_link(&frame.rows, &frame.wrapped, row as usize, col as usize, re)
+    }
+
+    /// The explicit OSC 8 hyperlink on viewport cell (`col`, `row`): its URI and the run of cells
+    /// on that row that share it.
+    fn osc8_link(&self, col: u16, row: u32) -> Option<Link> {
+        let uri_at = |c: u16| -> Option<String> {
+            let g = self.term.grid_ref(Point::Viewport(PointCoordinate { x: c, y: row })).ok()?;
+            if !g.cell().ok()?.has_hyperlink().ok()? {
+                return None;
+            }
+            let mut buf = [0u8; 2048];
+            let n = g.hyperlink_uri(&mut buf).ok()?;
+            (n > 0).then(|| String::from_utf8_lossy(&buf[..n.min(buf.len())]).into_owned())
+        };
+        let uri = uri_at(col)?;
+        let (mut a, mut b) = (col, col);
+        while a > 0 && uri_at(a - 1).as_deref() == Some(uri.as_str()) {
+            a -= 1;
+        }
+        while b + 1 < self.cols && uri_at(b + 1).as_deref() == Some(uri.as_str()) {
+            b += 1;
+        }
+        Some(Link { url: uri, spans: vec![(row as usize, usize::from(a), usize::from(b - a) + 1)] })
+    }
+
+    /// Recompute the hovered link. Returns true if it changed (redraw, cursor).
+    pub fn refresh_link(&mut self) -> bool {
+        let new = if self.link_active() { self.compute_link() } else { None };
+        let new = new.filter(|l| self.url_style.allows(&l.url));
+        let changed = new != self.link;
+        self.link = new;
+        changed
+    }
+
     /// Mouse pointer shape for the current hover state.
     pub fn pointer_cursor(&self) -> &'static str {
-        if self.btn_hover {
+        if self.btn_hover || self.link.is_some() {
             "pointer"
         } else if self.bar_hot || self.tracking {
             "default"

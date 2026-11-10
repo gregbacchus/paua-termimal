@@ -36,7 +36,7 @@ example and docs can't hide typos). Keep that attribute on new structs.
 ```bash
 PATH=$HOME/.local/zig:$PATH cargo run          # libghostty-vt needs Zig 0.15.2 on PATH to build
 PATH=$HOME/.local/zig:$PATH cargo test         # ~90 unit tests; no display needed for most
-cargo run -- install | uninstall | --help      # CLI: desktop entry + icons into ~/.local/share
+cargo run -- setup | install | uninstall | --help   # CLI: first-run wizard; desktop entry + icons
 ```
 
 System packages: `build-essential pkg-config libgtk-4-dev libadwaita-1-dev` (Ubuntu 24.04+).
@@ -61,7 +61,8 @@ builds x86_64 and aarch64 tarballs, publishes the GitHub release and updates the
 | `src/session.rs` | ssh / sudo / container / multiplexer / remote detection from `/proc` |
 | `src/cmdtimer.rs` | Command-running timer state machine |
 | `src/searchbox.rs`, `src/palette.rs` | Title-bar find box / command palette and fuzzy matching |
-| `src/install.rs` | `paua install` (desktop entry, icons built into the binary) |
+| `src/setup.rs` | `paua setup`: first-run wizard (finds Nerd Fonts, asks, writes a *minimal* config, offers `install`). Keep the config it writes minimal and valid |
+| `src/install.rs` | `paua install` (desktop entry, icons built into the binary; offers `setup` when there is no config) |
 | `src/frame.rs`, `src/style.css` | Animated frame colour; the stylesheet |
 | `assets/icons/` | App icon (PNGs 16 to 512) and symbolic action icons |
 | `docs/` | Configuration documentation (see the rule above) |

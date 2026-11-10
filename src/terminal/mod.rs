@@ -5,6 +5,7 @@
 
 mod boxdraw;
 mod input;
+mod links;
 mod mouse;
 mod osc133;
 mod pty;
@@ -28,6 +29,7 @@ use libghostty_vt::{
     terminal::{Mode, ScrollViewport},
 };
 
+pub use links::{UrlModifier, UrlStyle};
 pub use render::{InactiveStyle, Rgb};
 pub use scrollbar::{ButtonStyle, ScrollbarMode, ScrollbarStyle};
 pub use search::{CaseMode, FindOptions, FindStatus, FindStyle, MAX_MATCHES};
@@ -136,6 +138,14 @@ pub struct State {
     mev: gmouse::Event<'static>,
     dragging: mouse::Dragging,
     pointer: (f64, f64),
+    /// Modifier keys as last seen (for the open-link modifier).
+    mods: Mods,
+    url_style: UrlStyle,
+    url_re: Option<regex::Regex>,
+    /// The link under the pointer while the open-link modifier is held.
+    link: Option<links::Link>,
+    /// A link pressed with the modifier: opened on release.
+    pending_url: Option<String>,
     wheel_accum: f32,
     autoscrolling: bool,
     /// Last seen "program enabled mouse tracking" value, to switch the pointer cursor shape.
@@ -573,6 +583,15 @@ impl TermView {
         *self.imp().on_find.borrow_mut() = Some(Box::new(f));
     }
 
+    pub fn set_url_style(&self, style: UrlStyle) {
+        if let Some(st) = self.imp().state.borrow_mut().as_mut() {
+            st.url_re = links::url_regex(&style.schemes);
+            st.url_style = style;
+            st.link = None;
+        }
+        self.queue_draw();
+    }
+
     pub fn set_find_style(&self, style: FindStyle) {
         if let Some(st) = self.imp().state.borrow_mut().as_mut() {
             st.find_style = style;
@@ -826,6 +845,11 @@ impl TermView {
             mev: gmouse::Event::new()?,
             dragging: mouse::Dragging::None,
             pointer: (0.0, 0.0),
+            mods: Mods::empty(),
+            url_re: links::url_regex(&UrlStyle::default().schemes),
+            url_style: UrlStyle::default(),
+            link: None,
+            pending_url: None,
             wheel_accum: 0.0,
             autoscrolling: false,
             tracking: false,
@@ -955,6 +979,9 @@ impl TermView {
                 }
             }
             st.term.vt_write(data);
+            if st.link.is_some() {
+                st.refresh_link(); // output may have moved or changed what is under the pointer
+            }
             if st.find.is_some() {
                 st.find_dirty = true;
             }
@@ -1080,10 +1107,21 @@ impl TermView {
             let mut guard = self.imp().state.borrow_mut();
             let Some(st) = guard.as_mut() else { return };
             st.pointer = (x, y);
+            st.mods = mods;
             if button == 1 && st.scroll_ui_press(x, y) {
                 drop(guard);
                 self.queue_draw();
                 return;
+            }
+            // Modifier + click on a link: follow it on release (instead of starting a selection).
+            if button == 1 && st.link_active() {
+                st.refresh_link();
+                if let Some(l) = &st.link {
+                    st.pending_url = Some(l.url.clone());
+                    drop(guard);
+                    self.queue_draw();
+                    return;
+                }
             }
             if st.mouse_reporting(mods) {
                 st.dragging = mouse::Dragging::Report(button);
@@ -1135,9 +1173,19 @@ impl TermView {
 
     fn on_release(&self, x: f64, y: f64, mods: Mods) {
         let mut copy = false;
+        let mut open = None;
         {
             let mut guard = self.imp().state.borrow_mut();
             let Some(st) = guard.as_mut() else { return };
+            st.mods = mods;
+            st.pointer = (x, y);
+            if let Some(url) = st.pending_url.take() {
+                // Only if still on the same link.
+                st.refresh_link();
+                if st.link.as_ref().is_some_and(|l| l.url == url) {
+                    open = Some(url);
+                }
+            }
             match st.dragging {
                 mouse::Dragging::Report(b) => {
                     st.report_mouse(gmouse::Action::Release, mouse::button_for(b), x, y, mods, false);
@@ -1154,7 +1202,18 @@ impl TermView {
         if copy {
             self.copy_selection(true); // PRIMARY, like other Linux terminals
         }
+        if let Some(url) = open {
+            self.open_url(&url);
+        }
         self.queue_draw();
+    }
+
+    /// Open a link in the default application. (Its scheme was checked against the allow-list.)
+    fn open_url(&self, url: &str) {
+        let ctx = self.display().app_launch_context();
+        if let Err(e) = gio::AppInfo::launch_default_for_uri(url, Some(&ctx)) {
+            eprintln!("paua: couldn't open {url}: {e}");
+        }
     }
 
     /// While dragging a selection above/below the grid, keep scrolling and extending it.
@@ -1237,6 +1296,27 @@ impl TermView {
                     }
                     None => glib::Propagation::Proceed,
                 }
+            }
+        ));
+        // Pressing or releasing the open-link modifier while the pointer rests on a URL.
+        key.connect_modifiers(glib::clone!(
+            #[weak(rename_to = obj)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_, state| {
+                let mut cursor = None;
+                if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
+                    st.mods = mouse::mods_from(state);
+                    if st.refresh_link() {
+                        cursor = Some(st.pointer_cursor());
+                    }
+                }
+                if let Some(name) = cursor {
+                    obj.set_cursor_from_name(Some(name));
+                    obj.queue_draw();
+                }
+                glib::Propagation::Proceed
             }
         ));
         self.add_controller(key);
@@ -1322,7 +1402,9 @@ impl TermView {
                 let mut cursor = None;
                 if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
                     st.pointer = (x, y);
-                    if st.update_hover(x, y) {
+                    st.mods = mods;
+                    let hover_changed = st.update_hover(x, y);
+                    if st.refresh_link() || hover_changed {
                         cursor = Some(st.pointer_cursor());
                     }
                     if st.dragging == mouse::Dragging::None
@@ -1345,9 +1427,10 @@ impl TermView {
             move |_| {
                 let mut cursor = None;
                 if let Some(st) = obj.imp().state.borrow_mut().as_mut() {
-                    if st.bar_hot || st.btn_hover {
+                    if st.bar_hot || st.btn_hover || st.link.is_some() {
                         st.bar_hot = false;
                         st.btn_hover = false;
+                        st.link = None;
                         cursor = Some(st.pointer_cursor());
                     }
                 }
@@ -1465,6 +1548,9 @@ impl TermView {
                     };
                     st.pending -= step;
                     st.scroll_by(step);
+                    if st.link.is_some() {
+                        st.refresh_link();
+                    }
                     redraw = true;
                 }
             }

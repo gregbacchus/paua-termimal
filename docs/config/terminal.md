@@ -76,3 +76,36 @@ terminal:
     icon_opacity: 0.7
     hover_icon_opacity: 1.0
 ```
+
+## `terminal.urls`
+
+Following links in the output: hold the **modifier** (Ctrl by default) and the link under the pointer
+is underlined and the pointer becomes a hand; **modifier + click** opens it in your default
+application (a browser for `https://`, your mail client for `mailto:`, the file manager or default
+app for `file://`). Two kinds of link are recognised:
+
+- **Plain URLs** in the text, including ones that wrap over several lines. Trailing punctuation
+  that belongs to the sentence (`.`, `,`, a closing bracket without an opening one...) is left out.
+- **Explicit hyperlinks** (OSC 8) that programs emit, such as the file names in nushell's `ls`.
+
+Only links whose scheme is in `schemes` are underlined or opened. While a program has mouse
+tracking enabled (vim, htop...) the click goes to the program, so use `ctrl_shift` (Shift forces a
+local click) or hold **Ctrl+Shift** with the default `ctrl`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `terminal.urls.enabled` | bool | `true` | Turn link detection and opening off or on. |
+| `terminal.urls.modifier` | `ctrl` \| `alt` \| `ctrl_shift` | `ctrl` | The key held to follow links. |
+| `terminal.urls.schemes` | list of strings | `[http, https, ftp, ftps, file, mailto]` | URL schemes that are detected and opened. Add `ssh` or `git` to follow those too; a program can't make Paua open a scheme that isn't listed. |
+| `terminal.urls.osc8` | bool | `true` | Also follow explicit OSC 8 hyperlinks. |
+| `terminal.urls.color` | [themed tint](value-types.md#colours) | unset (the text colour) | Colour of the underline while hovering. |
+
+```yaml
+terminal:
+  urls:
+    enabled: true
+    modifier: ctrl          # ctrl | alt | ctrl_shift
+    schemes: [http, https, ftp, ftps, file, mailto]
+    osc8: true
+    # color: { dark: "#8db8ff", light: "#1d4f91" }
+```

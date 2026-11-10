@@ -8,6 +8,7 @@ mod header;
 mod install;
 mod palette;
 mod searchbox;
+mod setup;
 mod session;
 mod statusbar;
 mod template;
@@ -20,23 +21,53 @@ pub const APP_ID: &str = "io.github.gregbacchus.Paua";
 
 const USAGE: &str = "Paua, a colourful terminal.
 
-Usage: paua [install | uninstall | --help]
+Usage: paua [setup | install | uninstall | --help]
 
-  install      add the desktop entry and icons to ~/.local/share (shows Paua in the
-               GNOME overview and gives the dock its icon)
-  uninstall    remove them again
+  setup        first-run wizard: finds your Nerd Fonts, asks which to use for the terminal and for
+               the window decorations, writes ~/.config/paua/config.yaml, and offers to add Paua
+               to the GNOME overview
+                 --yes, -y   take the suggestions without asking
+                 --print     show the config instead of writing it
+  install      add the desktop entry and icons to ~/.local/share (shows Paua in the GNOME
+               overview and gives the dock its icon); offers `setup` if there is no config yet
+                 --yes, -y   run `setup` without asking     --no-config   don't offer it
+  uninstall    remove the desktop entry and icons again
 ";
 
 fn main() -> glib::ExitCode {
-    match std::env::args().nth(1).as_deref() {
-        Some("install") => return glib::ExitCode::from(install::install() as u8),
-        Some("uninstall") => return glib::ExitCode::from(install::uninstall() as u8),
-        Some("help" | "--help" | "-h") => {
-            print!("{USAGE}");
-            return glib::ExitCode::SUCCESS;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(cmd) = args.first().map(String::as_str) {
+        let flags = &args[1..];
+        let known = |allowed: &[&str]| flags.iter().all(|f| allowed.contains(&f.as_str()));
+        let usage_error = || {
+            eprintln!("{USAGE}");
+            glib::ExitCode::from(2)
+        };
+        let has = |names: &[&str]| flags.iter().any(|f| names.contains(&f.as_str()));
+        match cmd {
+            "setup" if known(&["--yes", "-y", "--print"]) => {
+                return glib::ExitCode::from(setup::run(setup::Options {
+                    assume_yes: has(&["--yes", "-y"]),
+                    print_only: has(&["--print"]),
+                    offer_install: true,
+                }) as u8);
+            }
+            "install" if known(&["--yes", "-y", "--no-config"]) => {
+                return glib::ExitCode::from(install::install(install::InstallOptions {
+                    assume_yes: has(&["--yes", "-y"]),
+                    no_config: has(&["--no-config"]),
+                }) as u8);
+            }
+            "uninstall" if known(&[]) => return glib::ExitCode::from(install::uninstall() as u8),
+            "help" | "--help" | "-h" => {
+                print!("{USAGE}");
+                return glib::ExitCode::SUCCESS;
+            }
+            "setup" | "install" | "uninstall" => return usage_error(),
+            _ => {} // anything else goes to GTK (its own options)
         }
-        _ => {}
     }
+
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::NON_UNIQUE) // sandbox: allow several instances

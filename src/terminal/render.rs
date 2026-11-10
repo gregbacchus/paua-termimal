@@ -170,6 +170,11 @@ pub struct Frame {
     pub rows: Vec<Vec<Cell>>,
     /// Find matches per viewport row (index `rows.len()` is the extra scroll row).
     pub highlights: Vec<Vec<Hl>>,
+    /// Row `i` is soft-wrapped: its text continues on row `i + 1`.
+    pub wrapped: Vec<bool>,
+    /// The hovered link: `(viewport row, first column, columns)`, and its colour (None = text colour).
+    pub link: Vec<(usize, usize, usize)>,
+    pub link_color: Option<Rgb>,
     pub fg: Rgb,
     pub bg: Rgb,
     pub cursor: Option<Cursor>,
@@ -206,6 +211,7 @@ pub fn read_frame(
     };
 
     let mut rows = Vec::new();
+    let mut wrapped = Vec::new();
     let mut row_iter = rows_it.update(&snapshot).ok()?;
     while let Some(row) = row_iter.next() {
         let mut cells = Vec::new();
@@ -253,9 +259,10 @@ pub fn read_frame(
             });
         }
         rows.push(cells);
+        wrapped.push(row.raw_row().and_then(|r| r.is_wrapped()).unwrap_or(false));
     }
 
-    Some(Frame { rows, highlights: Vec::new(), fg: fg_default, bg: bg_default, cursor })
+    Some(Frame { rows, wrapped, link: Vec::new(), link_color: None, highlights: Vec::new(), fg: fg_default, bg: bg_default, cursor })
 }
 
 /// Everything needed to turn cells into pixels.
@@ -343,7 +350,7 @@ fn procedural_char(c: &Cell) -> Option<char> {
     }
 }
 
-fn draw_row(snap: &gtk::Snapshot, m: &Metrics, row: &[Cell], y: f32, default_bg: Rgb, hls: &[Hl]) {
+fn draw_row(snap: &gtk::Snapshot, m: &Metrics, row: &[Cell], y: f32, default_bg: Rgb, hls: &[Hl], link: &[(usize, usize)], link_color: Option<Rgb>) {
     let (cw, ch) = (m.cell_w, m.cell_h);
 
     // --- Backgrounds, coalesced into runs of equal colour ---
@@ -430,6 +437,14 @@ fn draw_row(snap: &gtk::Snapshot, m: &Metrics, row: &[Cell], y: f32, default_bg:
         }
         let layout = make_layout(m, &text, first.bold, first.italic, first.underline, first.strike);
         draw_text_at(snap, m, &layout, start as f32 * cw, y, first.fg);
+    }
+
+    // --- The link under the pointer: an underline in the link colour (default: the text colour) ---
+    let thickness = (ch / 14.0).round().max(1.0);
+    let line_y = (y + m.ascent + thickness + 1.0).min(y + ch - thickness);
+    for &(c0, n) in link {
+        let colour = link_color.or_else(|| row.get(c0).map(|c| c.fg)).unwrap_or(Rgb(255, 255, 255));
+        snap.append_color(&colour.rgba(), &rect(c0 as f32 * cw, line_y, n as f32 * cw, thickness));
     }
 }
 
@@ -570,6 +585,10 @@ pub fn draw(widget: &impl IsA<gtk::Widget>, st: &mut State, snap: &gtk::Snapshot
         bar: st.sb_style,
         btn: st.btn_style,
     };
+    if let Some(l) = &st.link {
+        frame.link = l.spans.clone();
+        frame.link_color = st.url_style.color.map(|t| t.rgb);
+    }
     paint(snap, &m, &frame, extra_row.as_deref(), st.frac, st.focused, dim, st.pad, &ui, w, h);
 }
 
@@ -603,13 +622,18 @@ pub fn paint(
     snap.save();
     snap.translate(&graphene::Point::new(pad.left, pad.top));
 
+    // The hovered link, as (column, width) per viewport row.
+    let link_color = frame.link_color;
+    let link_spans = |row: usize| -> Vec<(usize, usize)> {
+        frame.link.iter().filter(|s| s.0 == row).map(|s| (s.1, s.2)).collect()
+    };
     for (i, row) in frame.rows.iter().enumerate() {
         let hls = frame.highlights.get(i).map_or(&[][..], Vec::as_slice);
-        draw_row(snap, m, row, i as f32 * m.cell_h - frac, frame.bg, hls);
+        draw_row(snap, m, row, i as f32 * m.cell_h - frac, frame.bg, hls, &link_spans(i), link_color);
     }
     if let Some(row) = extra {
         let hls = frame.highlights.get(frame.rows.len()).map_or(&[][..], Vec::as_slice);
-        draw_row(snap, m, row, frame.rows.len() as f32 * m.cell_h - frac, frame.bg, hls);
+        draw_row(snap, m, row, frame.rows.len() as f32 * m.cell_h - frac, frame.bg, hls, &[], None);
     }
 
     // --- Cursor ---

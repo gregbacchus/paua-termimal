@@ -111,7 +111,15 @@ fn stable_exe(exe: &Path) -> PathBuf {
     exe.to_path_buf()
 }
 
-pub fn install() -> i32 {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InstallOptions {
+    /// Run the config wizard without asking (taking its suggestions) when there is no config yet.
+    pub assume_yes: bool,
+    /// Don't offer the config wizard at all.
+    pub no_config: bool,
+}
+
+pub fn install(opts: InstallOptions) -> i32 {
     let exe = match std::env::current_exe().and_then(|p| p.canonicalize()) {
         Ok(p) => stable_exe(&p),
         Err(e) => {
@@ -131,6 +139,9 @@ pub fn install() -> i32 {
                     "Note: that is a build directory. For a stable location use `cargo install --path .` \
                      and run `paua install` again."
                 );
+            }
+            if !opts.no_config {
+                crate::setup::offer_after_install(opts.assume_yes);
             }
             0
         }

@@ -124,6 +124,14 @@ terminal:
     idle_ms: 1200 # how long it lingers after scrolling (auto mode)
     fade_ms: 200
 
+  # Following links: hold the modifier, then click a URL (or an OSC 8 hyperlink) to open it.
+  urls:
+    enabled: true
+    modifier: ctrl # ctrl | alt | ctrl_shift
+    schemes: [http, https, ftp, ftps, file, mailto] # only these are detected and opened
+    osc8: true # also follow explicit hyperlinks (e.g. nushell's ls)
+    color: { dark: "#8db8ff", light: "#1d4f91" } # underline colour; default: the text colour
+
   # The scroll-to-bottom button: true | false, or a map.
   scroll_to_bottom_button:
     enabled: true
