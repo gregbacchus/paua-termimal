@@ -274,6 +274,8 @@ pub struct Metrics<'a> {
     pub cell_w: f32,
     pub cell_h: f32,
     pub ascent: f32,
+    /// Device pixels per logical pixel (the window's scale factor).
+    pub scale: f32,
     pub hl_match: gdk::RGBA,
     pub hl_current: gdk::RGBA,
 }
@@ -317,25 +319,98 @@ fn needs_cairo(text: &str) -> bool {
     text.chars().any(|c| matches!(c, '(' | ')' | '[' | ']' | '{' | '}' | '/' | '\\'))
 }
 
+thread_local! {
+    /// Rasterised runs of tall glyphs (see `outline_texture`), by text, font, style, colour, scale.
+    static OUTLINES: std::cell::RefCell<std::collections::HashMap<String, gdk::MemoryTexture>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Most cached runs before the cache is emptied (it refills with what is on screen).
+const OUTLINE_CACHE_MAX: usize = 1500;
+
+/// A run of text rasterised with Cairo (the true glyph outlines) into a texture, cached, with
+/// `mx` / `my` logical pixels of margin around the layout's box. Drawing the texture on whole
+/// device pixels gives crisp strokes that don't depend on GTK's glyph cache, on how Cairo render
+/// nodes are replayed, or on partial repaints.
+fn outline_texture(m: &Metrics, layout: &pango::Layout, color: Rgb, w: i32, h: i32, mx: f32, my: f32) -> Option<gdk::MemoryTexture> {
+    let s = m.scale.max(1.0);
+    let key = format!(
+        "{}|{}|{}|{}|{:02x}{:02x}{:02x}",
+        layout.text(),
+        layout.font_description().map(|f| f.to_string()).unwrap_or_default(),
+        layout.attributes().map(|a| a.to_string()).unwrap_or_default(),
+        s,
+        color.0,
+        color.1,
+        color.2
+    );
+    if let Some(t) = OUTLINES.with(|c| c.borrow().get(&key).cloned()) {
+        return Some(t);
+    }
+    let wpx = ((w as f32 + 2.0 * mx) * s).ceil() as i32;
+    let hpx = ((h as f32 + 2.0 * my) * s).ceil() as i32;
+    if wpx <= 0 || hpx <= 0 || wpx > 16_000 || hpx > 4_000 {
+        return None;
+    }
+    let surface = gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, wpx, hpx).ok()?;
+    surface.set_device_scale(f64::from(s), f64::from(s));
+    {
+        let cr = gtk::cairo::Context::new(&surface).ok()?;
+        let c = color.rgba();
+        cr.set_source_rgba(f64::from(c.red()), f64::from(c.green()), f64::from(c.blue()), f64::from(c.alpha()));
+        cr.move_to(f64::from(mx), f64::from(my));
+        pangocairo::functions::show_layout(&cr, layout);
+    }
+    surface.flush();
+    let stride = surface.stride() as usize;
+    let data = surface.take_data().ok()?;
+    let bytes = gtk::glib::Bytes::from(&data[..]);
+    let tex = gdk::MemoryTexture::new(wpx, hpx, gdk::MemoryFormat::B8g8r8a8Premultiplied, &bytes, stride);
+    OUTLINES.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() >= OUTLINE_CACHE_MAX {
+            c.clear();
+        }
+        c.insert(key, tex.clone());
+    });
+    Some(tex)
+}
+
 fn draw_text_at(snap: &gtk::Snapshot, m: &Metrics, layout: &pango::Layout, x: f32, y: f32, color: Rgb) {
     let baseline = layout.baseline() as f32 / pango::SCALE as f32;
+    let cairo = needs_cairo(&layout.text());
+    let (mut tx, mut ty) = (x, y + (m.ascent - baseline));
+    if cairo {
+        // Cairo draws the true outlines at whatever sub-pixel offset it is given, which blurs the
+        // thin top and bottom strokes of tall glyphs unevenly (they look clipped). Start on a
+        // whole device pixel so the strokes are as crisp as the rest of the text.
+        let s = m.scale.max(1.0);
+        tx = (tx * s).round() / s;
+        ty = (ty * s).round() / s;
+    }
     snap.save();
-    snap.translate(&graphene::Point::new(x, y + (m.ascent - baseline)));
-    if needs_cairo(&layout.text()) {
+    snap.translate(&graphene::Point::new(tx, ty));
+    if cairo {
+        // Margins: the real outlines poke out of the logical box.
         let (w, h) = layout.pixel_size();
-        // Generous margins: the real outlines poke out of the logical box. A GskCairoNode is used
-        // directly (rather than Snapshot::append_cairo, whose context origin misbehaves under
-        // scale transforms such as HiDPI); its context draws in the node's own coordinates.
-        let bounds = graphene::Rect::new(-4.0, -8.0, w as f32 + 8.0, h as f32 + 16.0);
-        let node = gsk::CairoNode::new(&bounds);
-        {
-            let cr = node.draw_context();
-            let c = color.rgba();
-            cr.set_source_rgba(f64::from(c.red()), f64::from(c.green()), f64::from(c.blue()), f64::from(c.alpha()));
-            cr.move_to(0.0, 0.0);
-            pangocairo::functions::show_layout(&cr, layout);
+        let (mx, my) = (4.0f32, 8.0f32);
+        if let Some(tex) = outline_texture(m, layout, color, w, h, mx, my) {
+            let s = m.scale.max(1.0);
+            let bounds = graphene::Rect::new(-mx, -my, tex.width() as f32 / s, tex.height() as f32 / s);
+            snap.append_scaled_texture(&tex, gsk::ScalingFilter::Nearest, &bounds);
+        } else {
+            // Fallback: a Cairo render node.
+            let bounds = graphene::Rect::new(-mx, -my, w as f32 + 2.0 * mx, h as f32 + 2.0 * my);
+            let node = gsk::CairoNode::new(&bounds);
+            {
+                let cr = node.draw_context();
+                let c = color.rgba();
+                cr.set_source_rgba(f64::from(c.red()), f64::from(c.green()), f64::from(c.blue()), f64::from(c.alpha()));
+                cr.move_to(0.0, 0.0);
+                pangocairo::functions::show_layout(&cr, layout);
+            }
+            snap.append_node(&node);
         }
-        snap.append_node(&node);
     } else {
         snap.append_layout(layout, &color.rgba());
     }
@@ -573,6 +648,7 @@ pub fn draw(widget: &impl IsA<gtk::Widget>, st: &mut State, snap: &gtk::Snapshot
         cell_w: st.cell_w,
         cell_h: st.cell_h,
         ascent: st.ascent,
+        scale: widget.scale_factor().max(1) as f32,
         hl_match: tint(st.find_style.matched),
         hl_current: tint(st.find_style.current),
     };
@@ -788,6 +864,7 @@ mod tests {
             cell_w,
             cell_h,
             ascent,
+            scale: 1.0,
             hl_match: with_alpha(Rgb(255, 196, 60), 0.32),
             hl_current: with_alpha(Rgb(255, 140, 0), 0.65),
         };
