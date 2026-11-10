@@ -150,6 +150,15 @@ window.themed .pane-button:hover {
   opacity: 1;
 }
 
+/* Keep the button's allocation so revealing it doesn't move the path. */
+window.themed .pane-header .pane-copy-path {
+  opacity: 0;
+}
+window.themed .pane-header:hover .pane-copy-path,
+window.themed .pane-header .pane-copy-path:focus-visible {
+  opacity: 1;
+}
+
 /* Session badges in the pane header (ssh / sudo / ...). Colours can be overridden in the config. */
 window.themed .session-badge {
   border-radius: 999px;

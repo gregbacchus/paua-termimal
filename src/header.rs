@@ -84,6 +84,7 @@ impl PaneHeader {
             .build();
 
         let copy = Self::button(crate::icons::COPY_PATH_ICON, "Copy path");
+        copy.add_css_class("pane-copy-path");
         let pop_out = Self::button("pop-out-symbolic", "Open in new window");
         let close = Self::button("window-close-symbolic", "Close pane");
         let buttons = gtk::Box::builder()

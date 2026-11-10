@@ -130,7 +130,8 @@ shell and scrollback.
 Header text, font, alignment, tint, and colour are configurable under `panes.header`. Tab width,
 the New Tab icon, and indicator colours are configurable under `panes.tabs`.
 
-- **Copy Path** sits beside the path and copies that tab's real working directory.
+- **Copy Path** appears beside the path when you hover over its header or focus the button with
+  the keyboard. It copies that tab's real working directory.
 - **Open in New Window** moves the whole pane and its running tabs to another window. It is
   available when the original window has another pane.
 - **×** closes that tab. **Ctrl+Shift+W** closes the selected tab. Closing the last tab collapses its

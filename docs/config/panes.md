@@ -2,7 +2,7 @@
 
 These settings cover the space around the terminal text, how unfocused panes look, and each tab's
 header. Tabs share a single header row, with one **+** button at the right. The Copy Path button
-sits beside its tab's path and follows the header alignment.
+appears beside its tab's path on header hover or keyboard focus and follows the header alignment.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
