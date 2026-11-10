@@ -1,6 +1,6 @@
 //! Icons built into the binary.
 //!
-//! The split / pop-out icons are Paua's own symbolic icons, and the app icon is looked up by name.
+//! The copy, split, and pop-out icons are Paua's own symbolic icons.
 //! A development build finds them in `./assets/icons`, but an installed binary (a release tarball,
 //! Homebrew) has no such folder, so they are written to the user's cache directory at start-up and
 //! that directory is added to the icon theme's search path.
@@ -11,8 +11,11 @@ use std::path::{Path, PathBuf};
 
 use crate::APP_ID;
 
+pub(crate) const COPY_PATH_ICON: &str = "copy-path-symbolic";
+
 /// Paua's own symbolic action icons (`hicolor/scalable/actions/<name>.svg`).
-const ACTION_ICONS: [(&str, &[u8]); 4] = [
+const ACTION_ICONS: [(&str, &[u8]); 5] = [
+    (COPY_PATH_ICON, include_bytes!("../assets/icons/hicolor/scalable/actions/copy-path-symbolic.svg")),
     ("pop-out-pip-symbolic", include_bytes!("../assets/icons/hicolor/scalable/actions/pop-out-pip-symbolic.svg")),
     ("pop-out-symbolic", include_bytes!("../assets/icons/hicolor/scalable/actions/pop-out-symbolic.svg")),
     ("split-down-symbolic", include_bytes!("../assets/icons/hicolor/scalable/actions/split-down-symbolic.svg")),

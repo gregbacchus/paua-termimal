@@ -737,7 +737,7 @@ impl Default for HeaderConfig {
             color: None,
             pop_out_icon: "pop-out-symbolic".into(),
             close_icon: "window-close-symbolic".into(),
-            copy_icon: "edit-copy-symbolic".into(),
+            copy_icon: crate::icons::COPY_PATH_ICON.into(),
             command_timer: CommandTimerConfig::default(),
             bell: BellConfig::default(),
         }
@@ -1732,7 +1732,7 @@ panes:
         assert_eq!(h.color.unwrap().resolve(false).unwrap().alpha, 1.0);
         assert_eq!(h.pop_out_icon, "focus-windows-symbolic");
         assert_eq!(h.close_icon, "window-close-symbolic");
-        assert_eq!(h.copy_icon, "edit-copy-symbolic");
+        assert_eq!(h.copy_icon, "copy-path-symbolic");
         assert_eq!(h.path_replacements[0].to, "\u{f015}");
 
         // Defaults: centred, "{path}", $HOME -> ~.

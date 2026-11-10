@@ -47,7 +47,7 @@ the command timer chip and the bell flash.
 | `panes.header.path_ellipsis` | string | `…` | What replaces the removed segments (`...` also works). |
 | `panes.header.background` | [themed tint](value-types.md#colours) | unset | Tint laid over the pane background. `#rrggbbaa` for translucency. |
 | `panes.header.color` | [themed tint](value-types.md#colours) | unset (normal text colour, dimmed) | Text and icon colour. |
-| `panes.header.copy_icon` | [icon name](value-types.md#icon-names) | `edit-copy-symbolic` | Icon of the *copy path* button. |
+| `panes.header.copy_icon` | [icon name](value-types.md#icon-names) | `copy-path-symbolic` | Icon of the *copy path* button. The built-in default shows two overlapping sheets. Applies live. |
 | `panes.header.pop_out_icon` | [icon name](value-types.md#icon-names) | `pop-out-symbolic` | Icon of the *open in a new window* button (also `pop-out-pip-symbolic`). |
 | `panes.header.close_icon` | [icon name](value-types.md#icon-names) | `window-close-symbolic` | Icon of the *close pane* button. |
 
@@ -64,7 +64,7 @@ panes:
     path_ellipsis: "…"
     # background: { dark: "#ffffff14", light: "#00000010" }
     # color: { dark: "#c8c8d0", light: "#444450" }
-    copy_icon: edit-copy-symbolic
+    copy_icon: copy-path-symbolic
     pop_out_icon: pop-out-symbolic
     close_icon: window-close-symbolic
 ```

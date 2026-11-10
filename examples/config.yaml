@@ -72,8 +72,8 @@ panes:
     # Header background (laid over the pane colour) and text / icon colour. Unset = no tint.
     background: { dark: "#ffffff14", light: "#00000010" }
     color: { dark: "#c8c8d0", light: "#444450" }
-    # Button icons: any icon name from the theme, or ours (pop-out-symbolic, pop-out-pip-symbolic).
-    copy_icon: edit-copy-symbolic
+    # Button icons: any icon name from the theme or Paua's built-in icons.
+    copy_icon: copy-path-symbolic # two overlapping sheets
     pop_out_icon: pop-out-symbolic
     close_icon: window-close-symbolic
 

@@ -92,5 +92,5 @@ Single-quoted and plain YAML strings do not process escapes.
 ## Icon names
 
 Options such as `copy_icon` take a **theme icon name** (any icon in the current GTK icon theme,
-e.g. `edit-copy-symbolic`) or one of ours: `pop-out-symbolic`, `pop-out-pip-symbolic`,
+e.g. `edit-copy-symbolic`) or one of ours: `copy-path-symbolic`, `pop-out-symbolic`, `pop-out-pip-symbolic`,
 `split-right-symbolic`, `split-down-symbolic`.

@@ -124,7 +124,7 @@ closes the window. Panes other than the focused one are dimmed/recoloured (see `
 Each pane has a header line with configurable text (`panes.header.template`, font, alignment,
 background tint, text colour) and three buttons on the right:
 
-- **copy path**: copies the pane's real working directory to the clipboard.
+- **copy path** (two overlapping sheets): copies the pane's real working directory to the clipboard.
 - **open in new window**: moves the pane, with its running shell, into its own full window (title
   bar, status bar, splits, its own frame colour). Offered while the pane's window keeps another pane.
 - **close**: closes the pane and ends its shell.
