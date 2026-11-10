@@ -1,0 +1,6 @@
+
+# Build the terminal emulator library (Zig) optimised even in debug builds. In Zig's Debug mode it
+# re-verifies page integrity on every hyperlink / style operation, which makes output that has many
+# OSC 8 links (nushell's `ls`) get slower and slower.
+[env]
+LIBGHOSTTY_VT_SYS_OPTIMIZE = "ReleaseFast"

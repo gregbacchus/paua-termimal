@@ -1,0 +1,235 @@
+/*
+ * Layout idea: the window background IS the frame colour. The title bar and status bar are
+ * transparent, so all three are guaranteed to match. Content lives in rounded "pane" cards inset
+ * from the frame; the gaps between cards (the paned separators) are transparent too, so the frame
+ * colour shows through. Gap width = 6px everywhere (side margin, separators).
+ *
+ * Classes on <window>:  themed  frame-{a,b} (set by frame.rs)  {light,dark}
+ */
+
+/* ---------- Transitions (GTK animates these on the GPU render path) ---------- */
+window.themed,
+window.themed .pane,
+window.themed .command-center,
+window.themed headerbar,
+window.themed .status-bar {
+  transition: background-color 300ms ease-in-out,
+              color 300ms ease-in-out;
+}
+
+/* ---------- Frame: window + title bar + status bar ---------- */
+window.themed headerbar,
+window.themed .status-bar {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+window.themed .status-bar {
+  padding: 0 10px;
+  min-height: 34px;
+  font-size: 0.9em;
+}
+
+window.themed .command-center {
+  color: inherit;
+  border-radius: 6px;
+  min-height: 28px;
+  padding: 0 4px;
+  transition: background-color 150ms ease-in-out;
+}
+
+/* The box's contents: a plain entry inside our rounded box. */
+window.themed .command-center entry {
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+  min-height: 0;
+  padding: 0 6px;
+  color: inherit;
+}
+window.themed .command-center entry placeholder { opacity: 0.65; }
+window.themed .command-center .mode-chip {
+  font-weight: 700;
+  font-size: 0.8em;
+  padding: 0 7px;
+  min-height: 18px;
+  border-radius: 5px;
+  background-color: rgba(128, 128, 128, 0.28);
+}
+window.themed .command-center .match-count {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+  opacity: 0.85;
+}
+window.themed .command-center .match-count.none,
+window.themed .command-center .match-count.error { color: #ffb4a8; opacity: 1; }
+window.themed .command-center .command-button {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  color: inherit;
+  opacity: 0.8;
+}
+window.themed .command-center .command-button:hover { opacity: 1; }
+window.themed .command-center .command-toggle { font-size: 0.8em; font-weight: 700; }
+window.themed .command-center .command-toggle:checked {
+  background-color: rgba(128, 128, 128, 0.35);
+  opacity: 1;
+}
+
+/* Frame colours (window, title bar text, backdrop) are generated at runtime: see frame.rs. */
+
+/* ---------- Workbench: inset area holding the tiled panes ---------- */
+window.themed .workbench {
+  margin: 0 6px;                      /* side gap, equal to the divider width */
+}
+
+/* Dividers: same width as the side gap, transparent so the frame colour shows through. */
+window.themed paned > separator {
+  min-width: 6px;
+  min-height: 6px;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* ---------- Panes (cards) ---------- */
+window.themed .pane {
+  border-radius: 10px;
+}
+window.dark .pane  { background-color: #1e1e22; color: #d4d4d8; }
+window.light .pane { background-color: #fbfbfc; color: #2e2e33; }
+
+/* Header line above each terminal. Its font comes from the config (Pango attributes). */
+window.themed .pane .pane-header {
+  padding: 4px 6px 2px 6px;
+  transition: opacity 150ms ease-in-out, background-color 250ms ease-in-out;
+}
+window.themed .pane.inactive .pane-header {
+  opacity: 0.35;
+}
+
+window.themed .pane-title {
+  opacity: 0.65;
+  padding: 4px 8px;
+}
+
+window.themed .pane-button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  opacity: 0.85;
+  -gtk-icon-size: 16px;
+  transition: opacity 120ms ease-in-out;
+}
+window.themed .pane-button:hover {
+  opacity: 1;
+}
+
+/* Session badges in the pane header (ssh / sudo / ...). Colours can be overridden in the config. */
+window.themed .session-badge {
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 0.85em;
+  font-weight: 600;
+  min-height: 18px;
+}
+window.dark  .session-badge.ssh         { background-color: rgba(76, 139, 245, 0.22);  color: #8db8ff; }
+window.light .session-badge.ssh         { background-color: rgba(31, 95, 214, 0.14);   color: #1f5fd6; }
+window.dark  .session-badge.remote      { background-color: rgba(160, 118, 255, 0.22); color: #c3a8ff; }
+window.light .session-badge.remote      { background-color: rgba(106, 63, 208, 0.14);  color: #6a3fd0; }
+window.dark  .session-badge.sudo        { background-color: rgba(255, 176, 46, 0.22);  color: #ffc069; }
+window.light .session-badge.sudo        { background-color: rgba(190, 110, 0, 0.16);   color: #a35d00; }
+window.dark  .session-badge.root        { background-color: rgba(255, 82, 82, 0.26);   color: #ff8f8f; }
+window.light .session-badge.root        { background-color: rgba(200, 30, 30, 0.14);   color: #c01818; }
+window.dark  .session-badge.container   { background-color: rgba(56, 200, 178, 0.20);  color: #62dcc9; }
+window.light .session-badge.container   { background-color: rgba(10, 125, 110, 0.14);  color: #0d7f70; }
+window.dark  .session-badge.multiplexer { background-color: rgba(160, 160, 170, 0.20); color: #c8c8d0; }
+window.light .session-badge.multiplexer { background-color: rgba(90, 90, 100, 0.14);   color: #55555e; }
+
+/* The whole header line takes a subtle tint while the pane is in an ssh / sudo / ... session.
+   Override per kind in the config (session.<kind>.header_background / header_color). */
+window.dark  .pane-header.session-root      { background-color: rgba(255, 82, 82, 0.16); }
+window.light .pane-header.session-root      { background-color: rgba(200, 30, 30, 0.12); }
+window.dark  .pane-header.session-sudo      { background-color: rgba(255, 176, 46, 0.13); }
+window.light .pane-header.session-sudo      { background-color: rgba(190, 110, 0, 0.12); }
+window.dark  .pane-header.session-ssh       { background-color: rgba(76, 139, 245, 0.14); }
+window.light .pane-header.session-ssh       { background-color: rgba(31, 95, 214, 0.10); }
+window.dark  .pane-header.session-remote    { background-color: rgba(160, 118, 255, 0.14); }
+window.light .pane-header.session-remote    { background-color: rgba(106, 63, 208, 0.10); }
+window.dark  .pane-header.session-container { background-color: rgba(56, 200, 178, 0.12); }
+window.light .pane-header.session-container { background-color: rgba(10, 125, 110, 0.10); }
+
+/* The command palette dropdown under the title-bar box. It sits in a popover (outside the window
+   node), so it is styled with its own classes rather than the window's theme classes. */
+popover.palette-popover > contents {
+  padding: 4px;
+  border-radius: 10px;
+}
+.palette-list { background: none; }
+.palette-row {
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-height: 0;
+}
+.palette-row:selected { background-color: alpha(currentColor, 0.14); }
+.palette-title { font-size: 0.95em; }
+.palette-subtitle { font-size: 0.82em; opacity: 0.6; }
+.palette-tag {
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  min-width: 62px;
+  opacity: 0.55;
+}
+.palette-row.item:selected .palette-tag { opacity: 0.8; }
+
+/* The running-command timer chip in the pane header. */
+window.themed .pane-header .run-timer {
+  font-size: 0.85em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0 9px;
+  min-height: 18px;
+  border-radius: 999px;
+  background-color: rgba(255, 176, 46, 0.20);
+}
+window.dark  .pane-header .run-timer { color: #ffc069; }
+window.light .pane-header .run-timer { color: #a35d00; }
+window.themed .pane-header .run-timer.done { background-color: rgba(128, 128, 128, 0.22); }
+window.dark  .pane-header .run-timer.done { color: #c8c8d0; }
+window.light .pane-header .run-timer.done { color: #55555e; }
+window.dark  .pane-header .run-timer.failed { background-color: rgba(255, 82, 82, 0.24); color: #ff9a9a; }
+window.light .pane-header .run-timer.failed { background-color: rgba(200, 30, 30, 0.14); color: #b81818; }
+
+/* Bell flash over the pane header; colour and fade time come from the config. */
+.pane-header .pane-bell { opacity: 0; background-color: rgba(255, 255, 255, 0.32); }
+window.light .pane-header .pane-bell { background-color: rgba(0, 0, 0, 0.16); }
+
+/* ---------- Status bar widgets ---------- */
+.status-bar scrolledwindow, .status-bar scrolledwindow viewport { background: none; }
+.status-bar .sb-item { border-radius: 5px; }
+.status-bar label.sb-item { padding: 0 8px; min-height: 24px; }
+.status-bar button.sb-item,
+.status-bar menubutton.sb-item > button,
+.status-bar .sb-git button {
+  background: none;
+  box-shadow: none;
+  border: none;
+  border-radius: 5px;
+  min-height: 24px;
+  padding: 0 8px;
+  color: inherit;
+}
+.status-bar button.sb-item:hover,
+.status-bar menubutton.sb-item > button:hover,
+.status-bar .sb-git button:hover { background-color: rgba(128, 128, 128, 0.28); }
+.status-bar .sb-git.dirty .sb-git-branch label { font-weight: 600; }
+.status-bar .sb-git button.sb-git-sync { padding: 0 6px; }
+popover .sb-row { min-height: 28px; padding: 0 8px; }

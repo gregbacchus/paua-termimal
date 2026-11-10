@@ -1,0 +1,9 @@
+/target
+
+# Local per-directory colour overrides used while developing
+/.paua.yaml
+/examples/.paua.yaml
+
+# Editor / profiling leftovers
+perf.data*
+*.orig

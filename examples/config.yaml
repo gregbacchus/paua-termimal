@@ -1,0 +1,273 @@
+# Paua example configuration: copy to ~/.config/paua/config.yaml.
+#
+# Every field is optional; what is shown here is a worked example (VictorMono Nerd Font Propo in the
+# terminal, Ubuntu Nerd Font in the pane headers and the status bar) with the default noted where it
+# differs. The file is checked by the test suite, so every key below is real. Icons written as
+# "\uXXXX" / "\UXXXXXXXX" are Nerd Font glyphs (a UTF-16 pair such as "\U000F0109" also works).
+# Colours: "#rrggbb", "#rrggbbaa" (translucent), or { dark: ..., light: ... } for each colour scheme.
+
+# Reload this file (and the focused pane's .paua.yaml) when it changes. Default: true.
+watch: true
+
+# ---------------------------------------------------------------------------------------------
+# Terminal font
+# ---------------------------------------------------------------------------------------------
+font:
+  family: VictorMono Nerd Font Propo
+  size: 11 # points
+  weight: normal # 100-1000 or a name: thin light normal medium semibold bold black
+  bold_weight: bold # default: 700 (or 200 above `weight` if that is heavier)
+  features: "" # OpenType features, e.g. "-calt" turns ligatures off. Default: ligatures on
+
+# ---------------------------------------------------------------------------------------------
+# Window
+# ---------------------------------------------------------------------------------------------
+window: # width / height / maximized apply at startup only
+  maximized: true
+  width: 60% # 1100, 1100px, or 80% (of the monitor)
+  height: 80%
+  inactive_dim: 0.12 # how much the frame darkens while the window is unfocused (0 = not at all)
+  # The frame (title bar, status bar, borders) takes the colour of, in order: an active ssh/sudo
+  # session (see `session`), a directory's .paua.yaml, a VS Code colour (below), this default.
+  color: { dark: "#4a2f80", light: "#7a56c2" }
+  vscode_colors: true # read the nearest .vscode/settings.json above the working directory (not watched)
+  vscode_color_keys: # tried in order, at the top level and inside workbench.colorCustomizations
+    - peacock.color
+    - titleBar.activeBackground
+    - statusBar.background
+
+# ---------------------------------------------------------------------------------------------
+# Panes
+# ---------------------------------------------------------------------------------------------
+panes:
+  padding: 0 # px between a pane's edge and its text: a number, { x: 8, y: 4 } or { top, right, bottom, left }
+
+  # How panes other than the focused one look (only when there is more than one pane). Every value
+  # blends in over fade_ms, so the focused look is always the unmodified one.
+  inactive:
+    dim: 0.5 # fade towards the pane background: 0 = none, 1 = fully hidden
+    saturation: 0.5 # multiplier: 1 = unchanged, 0 = greyscale
+    lightness: 1.0 # multiplier: 1 = unchanged, 0.8 = darker
+    hue_shift: 0 # degrees, -360..360
+    fade_ms: 150 # 0 = instant
+
+  # The line above each terminal.
+  header:
+    template: "{path}" # {path} {dir} {title} {host} {user} {session}; {title|path} = first non-empty
+    align: center # start (left) | center | end (right)
+    font:
+      family: Ubuntu Nerd Font # default: the terminal font
+      size: 9 # points
+      weight: normal
+    # Rewrite the start of the path (whole components, first match wins; ~ and $HOME allowed).
+    # Plain prefixes, not regular expressions. The default is [{ from: $HOME, to: "~" }].
+    path_replacements:
+      - { from: $HOME, to: "\uf015" } # nf-fa-home
+      - { from: "$HOME/Downloads", to: "\uf019" } # nf-fa-download
+      - { from: "$HOME/code", to: "\uf1c9" } # nf-fa-file_code_o
+    # Too wide for the pane? Remove whole path segments from the middle: ~/a/b/c/d -> ~/a/…/d
+    trim_path: true
+    path_ellipsis: "…" # or "..."
+    # Header background (laid over the pane colour) and text / icon colour. Unset = no tint.
+    background: { dark: "#ffffff14", light: "#00000010" }
+    color: { dark: "#c8c8d0", light: "#444450" }
+    # Button icons: any icon name from the theme, or ours (pop-out-symbolic, pop-out-pip-symbolic).
+    copy_icon: edit-copy-symbolic
+    pop_out_icon: pop-out-symbolic
+    close_icon: window-close-symbolic
+
+    # Flash the header when a program rings the terminal bell (BEL), e.g. `printf '\a'`.
+    bell:
+      enabled: true
+      duration: 750ms # how long the flash takes to fade out
+      color: "#ffffff52" # default: a soft white (dark) / black (light)
+
+    # Running-command timer: once a command has run for `after`, a chip counts up in the header;
+    # when it ends it briefly says "took 12s". Shells that send OSC 133 markers (nushell does) are
+    # timed exactly, shell builtins included; otherwise a foreground process other than the shell
+    # means "running". Full-screen programs (vim, less...) aren't timed.
+    command_timer:
+      enabled: true
+      position: left # left (before the text) | right (next to the buttons)
+      after: 2s # 500ms, 2s, 1.5m, 1h ...
+      linger: 4s # how long "took 12s" stays (0 = don't show it)
+      ignore_alt_screen: true
+      ignore: [ssh, mosh, mosh-client, tmux, screen, zellij] # program names that are never timed
+      show_exit_status: true # "failed (exit 1) after 3s" (needs OSC 133)
+      icon: "\U000F0109" # nf-md-timer; a wide glyph can touch the text, see icon_gap
+      icon_gap: 8 # px after the icon (default 5)
+      background: "#ffb02e33" # colours while running ...
+      color: "#ffc069"
+      done_background: "#80808038" # ... after it finished ...
+      done_color: "#c8c8d0"
+      failed_background: "#ff525240" # ... and after a failure
+      failed_color: "#ff9a9a"
+
+# ---------------------------------------------------------------------------------------------
+# Terminal
+# ---------------------------------------------------------------------------------------------
+terminal:
+  scrollback: 10000 # lines; applies to terminals created after the change
+  shell: /usr/local/bin/nu # default: $SHELL
+
+  # Scrollbar: a mode (auto | always | never) or a map. Every field is optional.
+  scrollbar:
+    mode: auto # auto = fades in while scrolling / at the right edge, fades out when idle
+    width: 4 # px at rest ...
+    hover_width: 8 # ... and when the pointer is near
+    margin: 3 # gap to the pane's right edge
+    min_thumb: 28 # smallest thumb height
+    color: { dark: "#88c0ff", light: "#2050a0" } # default: the pane's text colour
+    opacity: 0.32 # thumb opacity at rest ...
+    hover_opacity: 0.55 # ... hovered ...
+    track_opacity: 0.08 # ... and the track while hovered
+    idle_ms: 1200 # how long it lingers after scrolling (auto mode)
+    fade_ms: 200
+
+  # The scroll-to-bottom button: true | false, or a map.
+  scroll_to_bottom_button:
+    enabled: true
+    size: 28 # diameter, px
+    margin_right: 20
+    margin_bottom: 14
+    color: "#ffffff" # default: the pane's text colour
+    background_opacity: 0.14
+    hover_background_opacity: 0.28
+    icon_opacity: 0.7
+    hover_icon_opacity: 1.0
+
+# ---------------------------------------------------------------------------------------------
+# Sessions: what a pane's shell is running inside
+# ---------------------------------------------------------------------------------------------
+# Detects ssh, sudo/su, containers, tmux/screen and other hosts by inspecting the processes on each
+# pane's pty (Linux /proc). Shown as badges in the header; each kind can also tint the header line
+# and recolour the window frame, so it is hard to type a root command in the wrong window.
+session:
+  detect: true
+  poll_ms: 1000
+  badges: true
+  # Per kind: root, sudo, ssh, container, remote (another host reported by the shell, mosh, telnet),
+  # multiplexer. All fields optional: enabled, label, icon, background, color, header_background,
+  # header_color, window_color.
+  ssh:
+    label: "ssh {target}" # {tool} {target} {host} {user}
+    icon: "\uf0c1 " # nf-fa-link, prepended to the label
+    background: "#4c8bf538" # badge colours (built-in colours otherwise)
+    color: "#8db8ff"
+    header_background: "#4c8bf524" # tint of the whole header line while in this session
+    header_color: "#cfe0ff" # ... and its text / icon colour
+    window_color: "#1d4f91" # recolour the window frame while this pane is active
+  sudo: { label: "{tool} {target}" }
+  root: { label: "root", window_color: { dark: "#6e1d1d", light: "#c43b3b" } }
+  multiplexer: { enabled: false }
+
+# ---------------------------------------------------------------------------------------------
+# Find in output: the title-bar box (Ctrl+Shift+F, or click it)
+# ---------------------------------------------------------------------------------------------
+search:
+  case: smart # smart (insensitive unless the query has capitals) | sensitive | insensitive
+  regex: false # start with the regular-expression toggle on
+  match_color: "#ffc43c52" # highlight colours, laid under the text
+  current_color: "#ff8c00a6"
+
+# ---------------------------------------------------------------------------------------------
+# Command palette: the same box, Ctrl+Shift+P (type `>` for commands, `/` for find)
+# ---------------------------------------------------------------------------------------------
+# Built in: split, pop out, close, clear terminal, copy path, new window, colour scheme,
+# reload/open config, go to another pane, cd to recent directories, ssh to ~/.ssh/config hosts.
+palette:
+  max_results: 40
+  directories: true # offer `cd` to recently visited directories
+  recent_dirs: 25
+  ssh_hosts: true # offer `ssh <host>` for the hosts in ~/.ssh/config
+  commands: # your own entries: `run` is typed into the focused pane, followed by Enter
+    - { title: "Run tests", run: "cargo test" }
+    - { title: "Git status", run: "git status -sb", subtitle: "in this repo" }
+
+# ---------------------------------------------------------------------------------------------
+# Status bar
+# ---------------------------------------------------------------------------------------------
+# Widgets, left and right; when the window is too narrow the lowest `priority` drops out first.
+# Omit `widgets` for the defaults (git, a recent-directories menu, a clock).
+#
+# A widget is whichever of these you give it:
+#   builtin: clock | git | dirs     exec: "<shell command>" (first output line is {output})
+#   menu: [{ label, action }]       action: <name> (a button)       text: "<template>"
+# Common fields: icon, tooltip, when: { files, not_files } (looked for in the pane's directory and
+# its parents), color, background, hide_empty, refresh (cwd | prompt), interval, cache, timeout.
+# Templates: {path} {dir} {host} {user} {title} {session} {exit} {output}, {a|b} (first non-empty),
+# {?x:text} / {!x:text} (only if x is set / not set), {{ and }} for literal braces.
+# Actions: split_right split_down find palette clear close_pane pop_out copy_path new_window
+# cycle_scheme reload_config open_config, type:<text> (typed into the pane + Enter) and
+# exec:<command> (runs in the background; the result is a toast).
+#
+# Everything slow (commands, git, file checks) runs on worker threads and is killed after `timeout`.
+status_bar:
+  timeout: 2s # default kill time for exec widgets
+  font:
+    family: Ubuntu Nerd Font # default: the system UI font
+    size: 9 # points; unset = 0.9 x the UI font size
+    weight: light # 100-1000 or a name
+    italic: false
+
+  git:
+    icon: "\U000F02A2 \uf418" # before the branch name
+    # {branch} {upstream} {ahead} {behind} {sync} {staged} {modified} {deleted} {renamed}
+    # {untracked} {conflicted} {stashed} {status} (the icons below, with counts) {dirty} {diverged}
+    format: "{branch}{?dirty:\U000f1a27} {status}"
+    icons:
+      staged: "\U000F0D8D "
+      modified: "\uf044 "
+      deleted: "\uf1f8 "
+      renamed: "\U000F0455 "
+      untracked: "\uf067"
+      conflicted: "🚨"
+      stashed: "\uf187"
+      ahead: "\U000F09C5"
+      behind: "\U000F09B7"
+      diverged: "\U000F00FB " # shown (with the counts) when the branch is both ahead and behind
+    counts: true # numbers next to the icons
+    interval: 5s # also refreshed on directory change and after each command
+    timeout: 3s # kill `git status` after this long
+    network_timeout: 60s # fetch / pull / push
+    sync_button: true # pull (fast-forward only) then push, like VS Code
+
+  widgets:
+    - { id: git, builtin: git, side: left, priority: 80 }
+    - {
+        id: node,
+        side: left,
+        priority: 51,
+        icon: "\ued0d",
+        exec: "node --version",
+        when: { files: [package.json], not_files: [bun.lockb] },
+      }
+    - {
+        id: rust,
+        side: left,
+        priority: 50,
+        icon: "\ue7a8",
+        exec: "rustc --version",
+        when: { files: [Cargo.toml] },
+        refresh: cwd, # cwd (default) | prompt (after every command; needs OSC 133)
+        cache: 1m, # keep the result this long per directory (default 30s)
+      }
+    - {
+        id: exit,
+        side: right,
+        priority: 60,
+        text: "{?exit:exit {exit}}", # only while the last command failed
+        color: "#ff6b6b",
+      }
+    - { id: dirs, builtin: dirs, side: right, priority: 30, icon: "\uf07c" }
+    - {
+        id: clock,
+        builtin: clock,
+        side: right,
+        priority: 10,
+        icon: "\uf017",
+        format: "%H:%M:%S", # strftime
+      }
+    # A button and a menu, for reference:
+    # - { id: clear, side: right, priority: 20, icon: "\uf12d", tooltip: "Clear terminal", action: clear }
+    # - { id: layout, side: right, priority: 15, text: "Layout", menu: [{ label: Split right, action: split_right }, { label: Split down, action: split_down }] }

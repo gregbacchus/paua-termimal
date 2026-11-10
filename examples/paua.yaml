@@ -1,0 +1,4 @@
+# Copy to a project directory as .paua.yaml. The nearest one above a pane's working directory
+# applies while that pane is focused. Only the window colour can be overridden so far.
+window:
+  color: "#8a2b2b"      # or { dark: "#8a2b2b", light: "#c8445a" }
