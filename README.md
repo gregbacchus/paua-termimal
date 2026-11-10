@@ -173,6 +173,32 @@ colours (running / done / failed), an icon, the threshold and the linger are con
 `cargo run`. In Zig's Debug mode it re-verifies its page structures on every hyperlink operation, and
 output with many OSC 8 links (nushell's `ls`/`la` link every file name) got slower with each run.
 
+## Installing with Homebrew, and releasing
+
+```bash
+brew tap gregbacchus/tap
+brew install paua
+paua install        # desktop entry + icons (uses brew's stable path, so upgrades keep working)
+```
+
+The brew package is the prebuilt binary from a GitHub release, linked against the **system** GTK 4
+and libadwaita (Ubuntu 24.04+; `sudo apt install libgtk-4-1 libadwaita-1-0` if missing), for x86_64
+and aarch64.
+
+**CI** (`.github/workflows/ci.yml`) builds and tests every push and pull request.
+**Releasing** (`.github/workflows/release.yml`): bump `version` in `Cargo.toml`, commit, then
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The workflow builds both architectures, publishes a GitHub release with the tarballs and checksums,
+and writes `Formula/paua.rb` (from `packaging/homebrew/paua.rb.in`) into the tap. One-time setup for
+the tap: create a public repository `homebrew-tap` under your account, and add a repository secret
+`HOMEBREW_TAP_TOKEN` to this repository (a fine-grained personal access token with **Contents:
+read and write** on `homebrew-tap`). Without the secret the release still works and only the tap
+update is skipped.
+
 ## Installing the desktop entry
 
 ```bash

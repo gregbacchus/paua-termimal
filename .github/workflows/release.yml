@@ -1,0 +1,125 @@
+name: Release
+
+# Push a tag such as v0.1.0 (matching `version` in Cargo.toml) to build binaries for Linux
+# x86_64 and aarch64, publish a GitHub release, and update the Homebrew tap.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-24.04, arch: x86_64 }
+          - { os: ubuntu-24.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The tag must match Cargo.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          if [ "$tag" != "$crate" ]; then
+            echo "tag v$tag does not match Cargo.toml version $crate" >&2
+            exit 1
+          fi
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libadwaita-1-dev
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          name="paua-${version}-linux-${{ matrix.arch }}"
+          mkdir -p dist
+          tar -C target/release -czf "dist/${name}.tar.gz" paua
+          (cd dist && sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" --title "Paua $GITHUB_REF_NAME" --generate-notes
+
+  tap:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Is the tap configured?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -n "$TOKEN" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else
+            echo "HOMEBREW_TAP_TOKEN is not set: skipping the tap update"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          path: src
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          repository: ${{ github.repository_owner }}/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Write the formula and push it
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sha() { cut -d' ' -f1 "dist/paua-${version}-linux-$1.tar.gz.sha256"; }
+          mkdir -p tap/Formula
+          sed -e "s/@VERSION@/${version}/g" \
+              -e "s/@SHA_X86_64@/$(sha x86_64)/" \
+              -e "s/@SHA_AARCH64@/$(sha aarch64)/" \
+              -e "s#@REPO@#${GITHUB_REPOSITORY}#g" \
+              src/packaging/homebrew/paua.rb.in > tap/Formula/paua.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/paua.rb
+          git commit -m "paua ${version}"
+          git push

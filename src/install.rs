@@ -98,9 +98,22 @@ fn refresh_caches(data: &Path) {
     quiet(apps);
 }
 
+/// Under Homebrew the binary sits in a versioned `Cellar` directory that changes on every upgrade;
+/// the stable path is `<prefix>/bin/paua`. Anything else is used as it is.
+fn stable_exe(exe: &Path) -> PathBuf {
+    let parts: Vec<_> = exe.components().collect();
+    if let (Some(i), Some(name)) = (parts.iter().position(|c| c.as_os_str() == "Cellar"), exe.file_name()) {
+        let candidate = parts[..i].iter().collect::<PathBuf>().join("bin").join(name);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    exe.to_path_buf()
+}
+
 pub fn install() -> i32 {
     let exe = match std::env::current_exe().and_then(|p| p.canonicalize()) {
-        Ok(p) => p,
+        Ok(p) => stable_exe(&p),
         Err(e) => {
             eprintln!("paua: can't find its own path: {e}");
             return 1;
@@ -145,6 +158,20 @@ mod tests {
         assert_eq!(exec_quote(Path::new("/home/me/.cargo/bin/paua")), "/home/me/.cargo/bin/paua");
         assert_eq!(exec_quote(Path::new("/opt/my apps/paua")), "\"/opt/my apps/paua\"");
         assert_eq!(exec_quote(Path::new("/opt/a$b/paua")), "\"/opt/a\\\\$b/paua\"");
+    }
+
+    #[test]
+    fn homebrew_installs_use_the_stable_path() {
+        let base = std::env::temp_dir().join(format!("paua-brew-test-{}", std::process::id()));
+        let cellar = base.join("Cellar/paua/0.1.0/bin");
+        fs::create_dir_all(&cellar).unwrap();
+        fs::create_dir_all(base.join("bin")).unwrap();
+        fs::write(cellar.join("paua"), "").unwrap();
+        assert_eq!(stable_exe(&cellar.join("paua")), cellar.join("paua")); // no launcher yet
+        fs::write(base.join("bin/paua"), "").unwrap();
+        assert_eq!(stable_exe(&cellar.join("paua")), base.join("bin/paua"));
+        assert_eq!(stable_exe(Path::new("/usr/bin/paua")), Path::new("/usr/bin/paua"));
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
