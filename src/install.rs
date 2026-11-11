@@ -40,14 +40,14 @@ pub fn desktop_entry(exe: &Path) -> String {
     format!(
         "[Desktop Entry]\n\
          Type=Application\n\
-         Name=Paua\n\
+         Name=Terminal\n\
          GenericName=Terminal\n\
          Comment=A colourful terminal\n\
          Exec={}\n\
          Icon={APP_ID}\n\
          Terminal=false\n\
          Categories=System;TerminalEmulator;\n\
-         Keywords=terminal;shell;console;command line;\n\
+         Keywords=paua;terminal;shell;console;command line;\n\
          StartupNotify=true\n\
          StartupWMClass={APP_ID}\n\
          Actions=new-window;\n\
@@ -196,7 +196,7 @@ mod tests {
         let d = desktop_entry(Path::new("/usr/bin/paua"));
         assert!(d.starts_with("[Desktop Entry]\n"));
         for line in [
-            "Name=Paua",
+            "Name=Terminal",
             "Exec=/usr/bin/paua",
             "Icon=io.github.gregbacchus.Paua",
             "StartupWMClass=io.github.gregbacchus.Paua",

@@ -33,7 +33,7 @@ Usage: paua [setup | install | uninstall | fonts | themes | --help]
                  --yes, -y   take the suggestions without asking
                  --print     show the config instead of writing it
                  --download-fonts   also download the missing Nerd Fonts (never done without being asked)
-  install      add the desktop entry and icons to ~/.local/share (shows Paua in the GNOME
+  install      add the desktop entry and icons to ~/.local/share (shows Terminal in the GNOME
                overview and gives the dock its icon); offers `setup` if there is no config yet
                  --yes, -y   run `setup` without asking     --no-config   don't offer it
   uninstall    remove the desktop entry and icons again

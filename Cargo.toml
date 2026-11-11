@@ -1,6 +1,6 @@
 [package]
 name = "paua"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 license = "MIT"
 description = "A colourful terminal for GNOME, built on libghostty-vt"

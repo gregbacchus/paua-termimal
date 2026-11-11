@@ -268,7 +268,7 @@ paua uninstall           # remove them again
 
 `paua install` writes `applications/io.github.gregbacchus.Paua.desktop` (launching the binary you ran
 it from) and the icon at 16 to 512 px (built into the binary), then refreshes the icon and desktop
-caches if the tools are there. After that Paua shows in the GNOME overview with its icon and the
+caches if the tools are there. After that Paua shows as **Terminal** in the GNOME overview with its icon and the
 dock groups its windows under it. The dock icon's right-click menu has a **New Window** entry (a desktop
 action that starts another Paua window). Run `paua install` again after upgrading to pick up changes to the
 entry, or if you move the binary. If there is no config file yet
