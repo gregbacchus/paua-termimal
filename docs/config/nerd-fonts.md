@@ -44,6 +44,7 @@ current cheat sheet don't match old fonts.
 | `status_bar.font.family` | the same Nerd Font as the header | Otherwise icons come from a fallback font and may be missing. |
 | `status_bar.font.size` | `9`–`10` | Unset gives 0.9 × the UI font. |
 | `status_bar.font.weight` | `light`–`normal` | Needs that weight installed; static fonts snap to the nearest one. |
+| `status_bar.widgets[].font` | `{ weight: bold }` for emphasis | Overrides only the specified properties; others inherit the status bar font. If overriding `family`, choose a Nerd Font for widgets with icons. |
 | `panes.header.command_timer.icon_gap` | `6`–`10` (default 5) | Wide glyphs overflow their advance and overlap the time; raise this until they clear. |
 | icons with a trailing space | `"\uf07c "` | A space after an icon is another way to get room (the status bar's `git.icons.*` and `widgets[].icon` use it as written). |
 | `status_bar.git.icon` | `"\ue0a0"` or `"\uf418"` | A branch glyph before the branch name. Combine glyphs freely: `"\U000F02A2 \uf418"`. |
@@ -119,6 +120,6 @@ The pane header buttons and the shared New Tab button use GTK icon names. See th
 [tab settings](panes.md#panestabs) and [header settings](panes.md#panesheader).
 
 If you see empty boxes (or nothing) instead of an icon, the font used by that part of the UI
-doesn't contain it: set `status_bar.font.family` / `panes.header.font.family` to your Nerd Font, or
+doesn't contain it: set `status_bar.font.family` / `panes.header.font.family` to your Nerd Font (and check any widget-level font family override), or
 check it is installed (`fc-list | grep -i nerd`). Emoji (for example `"🚨"`) come from the
 system's colour emoji font and are not affected by these settings.

@@ -1493,6 +1493,17 @@ pub struct WidgetConfig {
     pub hide_empty: bool,
     pub color: Option<ThemedTint>,
     pub background: Option<ThemedTint>,
+    pub font: WidgetFont,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, serde(deny_unknown_fields))]
+#[serde(default)]
+pub struct WidgetFont {
+    pub family: Option<String>,
+    pub size: Option<f32>,
+    pub weight: Option<FontWeight>,
+    pub italic: Option<bool>,
 }
 
 impl Default for WidgetConfig {
@@ -1517,6 +1528,7 @@ impl Default for WidgetConfig {
             hide_empty: true,
             color: None,
             background: None,
+            font: WidgetFont::default(),
         }
     }
 }
@@ -1981,6 +1993,7 @@ status_bar:
         add("status_bar.git", field_names::<GitConfig>());
         add("status_bar.git.icons", field_names::<GitIcons>());
         add("status_bar.widgets[]", field_names::<WidgetConfig>());
+        add("status_bar.widgets[].font", field_names::<WidgetFont>());
         add("status_bar.widgets[].when", field_names::<WhenConfig>());
         add("status_bar.widgets[].menu[]", field_names::<MenuEntry>());
         out

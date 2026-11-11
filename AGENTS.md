@@ -23,9 +23,33 @@ treated as part of the feature:
 3. **`README.md`** if it is user-visible behaviour.
 4. **`all_option_paths()`** in `src/config.rs` (tests) if you add a **new config struct**: register it
    there with its path prefix. The docs-coverage tests (`docs_cover_every_config_option`,
-   `docs_do_not_describe_options_that_do_not_exist`) then fail until the docs match the code exactly,
-   in both directions.
+   `docs_do_not_describe_options_that_do_not_exist`) check paths in both directions, but a path
+   mentioned outside its table can satisfy the first test. They do not verify documentation accuracy.
 5. Run `cargo test`. A failing docs test means the docs are out of date: fix the docs, never the test.
+
+### Mandatory documentation review for every config change
+
+**Trigger:** Any change to a configuration option, including a nested field, accepted value, default,
+meaning, inheritance, reload behavior, or removal. This applies even when tests already pass.
+
+Before completing the change, the agent MUST inspect each item below against the implementation:
+
+- The owning `docs/config/*.md` page: the exact option row, type, actual default, behavior, and whether
+  it applies live, at startup, or only to new terminals. Document inheritance and interactions.
+- That section's **Defaults** YAML: compare it with the actual defaults and update it when needed;
+  an omitted optional field MUST be clearly described as omitted or inheriting where relevant.
+- `docs/config/nerd-fonts.md`: review font, glyph, icon, and related changes; update it if the
+  guidance or examples are affected. A review finding of no impact is acceptable.
+- `examples/config.yaml`: add or update an understandable example and comment; remove stale keys.
+- `README.md`: update user-visible behavior and relevant examples.
+- `all_option_paths()` and `deny_unknown_fields`: register every new config struct and verify the
+  docs coverage test can see every nested option.
+
+The agent MUST run `cargo test`, inspect its result, and fix documentation failures. Passing tests
+MUST NOT be treated as proof that prose, defaults, examples, font guidance, or reload behavior are
+correct: tests check only part of the contract. Before reporting completion, the agent MUST compare
+its documentation diff with this checklist and report any verification it could not complete.
+If an item is unaffected, the agent MUST verify that conclusion; it need not make a no-op edit.
 
 Also: every config struct has `#[cfg_attr(test, serde(deny_unknown_fields))]` (release builds
 ignore unknown keys on purpose so old and new files keep loading; test builds reject them so the

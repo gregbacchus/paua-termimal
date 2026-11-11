@@ -295,6 +295,7 @@ status_bar:
         priority: 60,
         text: "{?exit:exit {exit}}", # only while the last command failed
         color: "#ff6b6b",
+        font: { weight: bold }, # override only the weight; inherit the other bar font settings
       }
     - { id: dirs, builtin: dirs, side: right, priority: 30, icon: "\uf07c" }
     - {

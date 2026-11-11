@@ -242,7 +242,7 @@ window.light .pane-header .pane-bell { background-color: rgba(0, 0, 0, 0.16); }
 
 /* ---------- Status bar widgets ---------- */
 .status-bar scrolledwindow, .status-bar scrolledwindow viewport { background: none; }
-.status-bar .sb-item { border-radius: 5px; }
+.status-bar .sb-item { border-radius: 5px; margin: 3px 0; }
 .status-bar label.sb-item { padding: 0 8px; min-height: 24px; }
 .status-bar button.sb-item,
 .status-bar menubutton.sb-item > button,

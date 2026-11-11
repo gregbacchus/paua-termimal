@@ -1071,8 +1071,21 @@ pub fn css(cfg: &StatusBarConfig) -> String {
     if !decl.is_empty() {
         css += &format!("window .status-bar, window .status-bar label, window popover .sb-row label {{ {decl}}}\n");
     }
-    for w in &cfg.widgets {
-        let id = if w.id.is_empty() { continue } else { class_name(&w.id) };
+    for (n, w) in cfg.widgets.iter().enumerate() {
+        let id = class_name(&if w.id.is_empty() { format!("w{n}") } else { w.id.clone() });
+        let f = &w.font;
+        let mut font = String::new();
+        if let Some(family) = &f.family {
+            font += &format!("font-family: \"{}\"; ", family.replace('"', ""));
+        }
+        if let Some(size) = f.size { font += &format!("font-size: {size}pt; "); }
+        if let Some(weight) = f.weight { font += &format!("font-weight: {}; ", weight.0); }
+        if let Some(italic) = f.italic {
+            font += if italic { "font-style: italic; " } else { "font-style: normal; " };
+        }
+        if !font.is_empty() {
+            css += &format!("window .status-bar .{id}, window .status-bar .{id} label, window .status-bar .{id}.sb-git.dirty .sb-git-branch label {{ {font}}}\n");
+        }
         for (mode, dark) in [("dark", true), ("light", false)] {
             let mut decl = String::new();
             if let Some(c) = w.color.and_then(|c| c.resolve(dark)) {
@@ -1092,6 +1105,19 @@ pub fn css(cfg: &StatusBarConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn widget_font_overrides_only_specified_properties() {
+        let mut cfg = StatusBarConfig::default();
+        cfg.font.italic = true;
+        cfg.widgets = vec![serde_yaml_ng::from_str("font: { weight: bold, italic: false }").unwrap()];
+        let rules = css(&cfg);
+        assert!(rules.contains(".sb-w0 label"));
+        assert!(rules.contains("font-weight: 700;"));
+        assert!(rules.contains("font-style: normal;"));
+        assert!(!rules.contains("font-family:"));
+        assert!(!rules.contains("font-size:"));
+    }
 
     #[test]
     fn project_files_are_found_in_parents() {

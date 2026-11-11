@@ -289,7 +289,7 @@ status_bar:
     - { id: git,   builtin: git,   side: left,  priority: 80 }
     - { id: node,  side: left,  priority: 50, icon: "\uf898", exec: "node --version",
         when: { files: [package.json], not_files: [bun.lockb] } }
-    - { id: exit,  side: right, priority: 60, text: "{?exit:exit {exit}}", color: "#ff6b6b" }
+    - { id: exit,  side: right, priority: 60, text: "{?exit:exit {exit}}", color: "#ff6b6b", font: { weight: bold } }
     - { id: clear, side: right, priority: 30, text: "Clear", action: clear }
     - { id: dirs,  builtin: dirs,  side: right, priority: 25 }
     - { id: clock, builtin: clock, side: right, priority: 10, format: "%H:%M" }
@@ -298,7 +298,7 @@ status_bar:
 Kinds (picked by which field you set): `builtin` (`clock`, `git`, `dirs`), `exec` (a shell command;
 its first output line is `{output}`), `menu` (a list of `{ label, action }`), `action` (a button) or
 plain `text`. Common fields: `icon`, `tooltip`, `when` (`files` / `not_files`, looked for in the pane's
-directory and its parents), `color`, `background`, `hide_empty`. Templates (`text`, `tooltip`) use
+directory and its parents), `color`, `background`, `hide_empty`, and `font` (individual properties override the bar font). Templates (`text`, `tooltip`) use
 `{path} {dir} {host} {user} {title} {session} {exit} {output}`, `{a|b}` (first non-empty),
 `{?x:text}` / `{!x:text}` (only if `x` is set / not set) and `{{` `}}` for literal braces.
 Actions: `split_right`, `split_down`, `new_tab`, `close_tab`, `previous_tab`, `next_tab`,

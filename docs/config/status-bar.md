@@ -72,6 +72,11 @@ What a widget is depends on which field you give it, checked in this order:
 | `status_bar.widgets[].hide_empty` | bool | `true` | Hide an `exec` widget while it has no output. |
 | `status_bar.widgets[].color` | [themed tint](value-types.md#colours) | unset | Text colour. |
 | `status_bar.widgets[].background` | [themed tint](value-types.md#colours) | unset | Background. |
+| `status_bar.widgets[].font` | map | unset | Override selected parts of the bar font for this widget; applies live. |
+| `status_bar.widgets[].font.family` | string | unset | Font family; unset inherits the bar font. Applies live. |
+| `status_bar.widgets[].font.size` | number | unset | Size in points; unset inherits the bar font. Applies live. |
+| `status_bar.widgets[].font.weight` | [font weight](value-types.md#font-weight) | unset | Weight; unset inherits the bar font. Applies live. |
+| `status_bar.widgets[].font.italic` | bool | unset | Italic when true, upright when false; unset inherits the bar font. Applies live. |
 
 ### `status_bar.widgets[].when`
 
@@ -105,7 +110,7 @@ Looked for in the pane's directory **and all its parents**.
 | `{exit}` | Exit status of the last command (empty if the shell doesn't report it; needs OSC 133). `0` counts as not set in `{?exit:...}`. |
 
 ```yaml
-- { id: exit, side: right, text: "{?exit:exit {exit}}", color: "#ff6b6b" }   # only after a failure
+- { id: exit, side: right, text: "{?exit:exit {exit}}", color: "#ff6b6b", font: { weight: bold } }   # only after a failure
 ```
 
 ### Actions
@@ -133,14 +138,17 @@ An unknown action shows a toast saying so.
 
 ### Defaults
 
+Each widget inherits the bar font by default (`font: {}`). Unset font properties continue to
+inherit when other properties are overridden.
+
 ```yaml
 status_bar:
   enabled: true
   timeout: 2s
   widgets:
-    - { id: git,   builtin: git,   side: left,  priority: 80 }
-    - { id: dirs,  builtin: dirs,  side: right, priority: 30, icon: "⌂" }
-    - { id: clock, builtin: clock, side: right, priority: 20 }
+    - { id: git,   builtin: git,   side: left,  priority: 80, font: {} }
+    - { id: dirs,  builtin: dirs,  side: right, priority: 30, icon: "⌂", font: {} }
+    - { id: clock, builtin: clock, side: right, priority: 20, font: {} }
 ```
 
 ### Examples, with Nerd Font icons
